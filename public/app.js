@@ -1,0 +1,444 @@
+const state = {
+  token: localStorage.getItem("arscrm:token") || "",
+  user: JSON.parse(localStorage.getItem("arscrm:user") || "null"),
+  route: localStorage.getItem("arscrm:route") || "dashboard",
+  data: null,
+  selectedLeadId: null,
+  selectedMessageId: "m1",
+  search: "",
+  notice: ""
+};
+
+const bootParams = new URLSearchParams(location.search);
+if (bootParams.get("view")) {
+  state.route = bootParams.get("view");
+}
+
+const nav = [
+  ["dashboard", "Dashboard", "▣"],
+  ["leads", "Leads", "◆"],
+  ["contacts", "Contacts", "●"],
+  ["deals", "Deals", "▤"],
+  ["tasks", "Tasks", "✓"],
+  ["calendar", "Calendar", "□"],
+  ["reports", "Reports", "◫"],
+  ["messages", "Messages", "✉"],
+  ["settings", "Settings", "⚙"]
+];
+
+const money = value => `$${Number(value || 0).toLocaleString()}`;
+const pct = value => `${Number(value || 0).toLocaleString()}%`;
+const el = selector => document.querySelector(selector);
+const ownerName = id => state.data?.users?.find(user => user.id === id)?.name || (id === state.user?.id ? state.user.name : "John Smith");
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "Request failed");
+  return body;
+}
+
+async function login(email, password) {
+  const result = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+  state.token = result.token;
+  state.user = result.user;
+  localStorage.setItem("arscrm:token", state.token);
+  localStorage.setItem("arscrm:user", JSON.stringify(state.user));
+  await bootstrap();
+}
+
+async function bootstrap() {
+  if (!state.token) return renderLogin();
+  try {
+    state.data = await api("/api/bootstrap");
+    state.selectedLeadId ||= state.data.leads[0]?.id;
+    render();
+  } catch (error) {
+    localStorage.removeItem("arscrm:token");
+    localStorage.removeItem("arscrm:user");
+    state.token = "";
+    state.user = null;
+    renderLogin(error.message);
+  }
+}
+
+function setRoute(route) {
+  state.route = route;
+  localStorage.setItem("arscrm:route", route);
+  render();
+}
+
+function filtered(items, fields) {
+  const q = state.search.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter(item => fields.some(field => String(item[field] || "").toLowerCase().includes(q)));
+}
+
+function renderLogin(error = "") {
+  document.body.className = "login-body";
+  el("#app").innerHTML = `
+    <main class="login-shell">
+      <section class="login-panel">
+        <div class="brand-row"><span class="brand-dot"></span><strong>Al Ras Steel CRM</strong></div>
+        <h1>Leads Tracker</h1>
+        <p>Full-stack CRM workspace for steel leads, deals, follow-ups, AI transcription, Google Places discovery, and market intelligence.</p>
+        <form id="loginForm" class="login-form">
+          <label>Email <input name="email" value="admin@alrassteel.com" autocomplete="email"></label>
+          <label>Password <input name="password" type="password" value="admin123" autocomplete="current-password"></label>
+          ${error ? `<div class="error">${error}</div>` : ""}
+          <button class="primary" type="submit">Sign In</button>
+        </form>
+        <div class="login-hints">
+          <span>Admin: admin@alrassteel.com / admin123</span>
+          <span>Salesman: john@alrassteel.com / sales123</span>
+        </div>
+      </section>
+    </main>
+  `;
+  el("#loginForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    login(form.get("email"), form.get("password")).catch(err => renderLogin(err.message));
+  });
+}
+
+function render() {
+  document.body.className = "";
+  const page = pages[state.route] || pages.dashboard;
+  el("#app").innerHTML = `
+    <div class="app-shell">
+      ${sidebar()}
+      <main class="workspace">
+        ${topbar(page.title, page.subtitle, page.action)}
+        ${state.notice ? `<div class="notice">${state.notice}</div>` : ""}
+        ${page.render()}
+      </main>
+    </div>
+  `;
+  bindCommon();
+  page.bind?.();
+}
+
+function sidebar() {
+  return `
+    <aside class="sidebar">
+      <div class="logo"><span class="brand-dot"></span><strong>DealCRM</strong><small>${state.user.role}</small></div>
+      <nav>
+        ${nav.map(([id, label, icon]) => `
+          <button class="${state.route === id ? "active" : ""}" data-route="${id}" title="${label}">
+            <span class="nav-icon">${icon}</span><span>${label}</span>${id === "messages" ? `<b>${state.data.messages.filter(m => m.unread).length}</b>` : ""}
+          </button>
+        `).join("")}
+      </nav>
+      <div class="upgrade">
+        <h3>AI CRM Suite</h3>
+        <p>Whisper notes, lead scoring, reports, and market alerts.</p>
+        <button data-ai-demo>Run AI Demo</button>
+      </div>
+    </aside>
+  `;
+}
+
+function topbar(title, subtitle, action) {
+  return `
+    <header class="topbar">
+      <div>
+        <h1>${title}</h1>
+        <p>${subtitle}</p>
+      </div>
+      <div class="top-actions">
+        <input id="globalSearch" placeholder="Search leads, customers, deals..." value="${state.search}">
+        <button class="icon-btn" title="Notifications">⌁<b>4</b></button>
+        <div class="profile"><span class="avatar"></span><strong>${state.user.name}</strong><small>${state.user.title}</small></div>
+        ${action ? `<button class="primary" data-action="${action.id}">${action.label}</button>` : ""}
+      </div>
+    </header>
+  `;
+}
+
+function bindCommon() {
+  document.querySelectorAll("[data-route]").forEach(button => button.addEventListener("click", () => setRoute(button.dataset.route)));
+  el("#globalSearch")?.addEventListener("input", event => {
+    state.search = event.target.value;
+    render();
+  });
+  document.querySelector("[data-ai-demo]")?.addEventListener("click", runAiDemo);
+  document.querySelector("[data-action='new-lead']")?.addEventListener("click", addLead);
+  document.querySelector("[data-action='logout']")?.addEventListener("click", () => {
+    localStorage.clear();
+    location.reload();
+  });
+}
+
+function kpiCards(cards) {
+  return `<section class="kpi-grid">${cards.map((card, index) => `
+    <article class="kpi-card">
+      <span class="kpi-icon tone-${index % 4}"></span>
+      <div><small>${card.label}</small><strong>${card.value}</strong><em>↑ ${card.delta}</em></div>
+    </article>
+  `).join("")}</section>`;
+}
+
+function table(headers, rows, empty = "No records") {
+  return `<div class="table-wrap"><table><thead><tr>${headers.map(head => `<th>${head}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.join("") : `<tr><td colspan="${headers.length}">${empty}</td></tr>`}</tbody></table></div>`;
+}
+
+function lineChart(values) {
+  const max = Math.max(...values);
+  const points = values.map((value, index) => `${index * 58 + 14},${150 - (value / max) * 120}`).join(" ");
+  return `<svg class="line-chart" viewBox="0 0 440 170" role="img" aria-label="Revenue trend">
+    ${[30, 65, 100, 135].map(y => `<line x1="0" x2="440" y1="${y}" y2="${y}"></line>`).join("")}
+    <polyline points="${points}"></polyline>
+    ${points.split(" ").map(point => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="4"></circle>`).join("")}
+  </svg>`;
+}
+
+function barChart(items) {
+  const max = Math.max(...items.map(item => item.value || item.count));
+  return `<div class="bar-chart">${items.map(item => `
+    <div><span style="height:${Math.max(18, ((item.value || item.count) / max) * 180)}px"></span><small>${item.label}</small></div>
+  `).join("")}</div>`;
+}
+
+function dashboardCards() {
+  const d = state.data.dashboard;
+  const admin = state.user.role === "admin";
+  return kpiCards([
+    { label: admin ? "Total Revenue" : "Monthly Sales", value: money(d.kpis.revenue), delta: "18.6%" },
+    { label: "New Leads", value: d.kpis.newLeads, delta: "12.4%" },
+    { label: admin ? "Opportunities" : "Quota Progress", value: admin ? d.kpis.opportunities : "67%", delta: admin ? "8.7%" : "on track" },
+    { label: admin ? "Win Rate" : "Conversion", value: pct(d.kpis.winRate), delta: "6.1%" },
+    { label: "Active Salesmen", value: d.kpis.activeSalesmen, delta: "4.1%" }
+  ]);
+}
+
+const pages = {
+  dashboard: {
+    title: () => state.user?.role === "admin" ? "CRM Admin Dashboard" : "My Sales Dashboard",
+    get subtitle() { return state.user?.role === "admin" ? "Complete overview of revenue, teams, leads, deals, and customer pipeline." : "Personal leads, quota progress, today schedule, and follow-up priorities."; },
+    get action() { return { id: "new-lead", label: "+ New Lead" }; },
+    render() {
+      const d = state.data.dashboard;
+      return `
+        ${dashboardCards()}
+        <section class="dashboard-grid">
+          <article class="panel wide"><h2>${state.user.role === "admin" ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>↑ 18.6% this month</em></div>${lineChart(d.salesTrend)}</article>
+          <article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of $115k</span></div><footer><b>$78,450 achieved</b><span>$36,550 to go</span></footer></article>
+          <article class="panel pipeline"><h2>${state.user.role === "admin" ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${stage.stage}</b><strong>${money(stage.value)}</strong><small>${stage.count} deals</small><button data-route="deals">View Deals →</button></div>`).join("")}</div></article>
+          <article class="panel">${table(["Time", "Activity"], d.schedule.map(event => `<tr><td><b>${event.time}</b></td><td>${event.meeting}</td></tr>`))}</article>
+          <article class="panel">${table(["Opportunity", "Value", "Stage"], state.data.deals.slice(0, 5).map(deal => `<tr><td><b>${deal.title}</b></td><td>${money(deal.value)}</td><td>${deal.stage}</td></tr>`))}</article>
+          <article class="panel">${table(["Task", "Due"], d.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`))}</article>
+        </section>
+        ${followupSection()}
+        ${portfolioSection()}
+      `;
+    }
+  },
+  leads: {
+    title: "My Leads Panel",
+    subtitle: "Manage assigned leads, filter by status, and open a full customer activity profile.",
+    action: { id: "new-lead", label: "+ Add Lead" },
+    render() {
+      const leads = filtered(state.data.leads, ["name", "company", "status", "source"]);
+      const selected = leads.find(lead => lead.id === state.selectedLeadId) || leads[0] || state.data.leads[0];
+      state.selectedLeadId = selected?.id;
+      return `<section class="split-view">
+        <article class="panel leads-list">
+          <div class="panel-head"><h2>Leads List</h2><button>View All</button></div>
+          ${table(["Lead", "Company", "Status", "Score", "Owner"], leads.map(lead => `<tr class="${selected?.id === lead.id ? "selected" : ""}" data-lead-id="${lead.id}"><td><b>${lead.name}</b></td><td>${lead.company}</td><td>${lead.status}</td><td>${lead.score}</td><td>${ownerName(lead.ownerId)}</td></tr>`))}
+        </article>
+        <article class="panel profile-card">
+          ${selected ? `<div class="profile-hero"><span class="big-avatar"></span><div><h2>${selected.name}</h2><p>${selected.company} · ${selected.sector}</p><mark>${selected.status}</mark></div></div>
+          <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>More</button></div>
+          <dl>${[["Email", selected.email], ["Phone", selected.phone], ["Company", selected.company], ["Website", selected.website], ["Lead Source", selected.source], ["Created", selected.created], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`).join("")}</dl>
+          <div class="score"><span>Lead Score</span><strong>${selected.score}/100</strong><i style="width:${selected.score}%"></i></div>
+          <h3>Recent Activity</h3><ul>${selected.notes.map(note => `<li>${note}</li>`).join("")}</ul>` : ""}
+        </article>
+      </section>`;
+    },
+    bind() {
+      document.querySelectorAll("[data-lead-id]").forEach(row => row.addEventListener("click", () => {
+        state.selectedLeadId = row.dataset.leadId;
+        render();
+      }));
+    }
+  },
+  contacts: {
+    title: "Contacts",
+    subtitle: "Customer contacts converted from Al Ras Steel lead activity.",
+    action: { id: "new-lead", label: "+ New Contact" },
+    render() {
+      return `<article class="panel full">${table(["Name", "Company", "Email", "Phone", "Owner"], filtered(state.data.leads, ["name", "company", "email"]).map(lead => `<tr><td><b>${lead.name}</b></td><td>${lead.company}</td><td>${lead.email}</td><td>${lead.phone}</td><td>${ownerName(lead.ownerId)}</td></tr>`))}</article>`;
+    }
+  },
+  deals: {
+    title: "Deals Pipeline",
+    subtitle: "Track opportunities, deal value, stages, owners, and close probability.",
+    action: { id: "new-lead", label: "+ New Deal" },
+    render() {
+      const stages = ["New", "Contacted", "Proposal", "Won"];
+      return `${kpiCards([
+        { label: "Open Deals", value: state.data.deals.length, delta: "8.2%" },
+        { label: "Pipeline Value", value: money(state.data.deals.reduce((sum, deal) => sum + deal.value, 0)), delta: "13.8%" },
+        { label: "Won Deals", value: state.data.deals.filter(deal => deal.stage === "Won").length, delta: "15.3%" },
+        { label: "Avg. Deal Size", value: money(12600), delta: "5.9%" }
+      ])}
+      <article class="panel full"><h2>Kanban Deal Board</h2><div class="kanban">${stages.map(stage => `<section><h3>${stage}</h3>${state.data.deals.filter(deal => deal.stage === stage).concat(state.data.leads.filter(lead => lead.stage === stage).slice(0, 2)).map(item => `<div class="deal-card"><b>${item.title || item.company}</b><span>${money(item.value)}</span></div>`).join("")}</section>`).join("")}</div></article>
+      <section class="two-col"><article class="panel">${table(["Deal", "Company", "Stage", "Close", "Value"], state.data.deals.map(deal => `<tr><td><b>${deal.title}</b></td><td>${deal.company}</td><td>${deal.stage}</td><td>${deal.close}</td><td>${money(deal.value)}</td></tr>`))}</article><article class="panel"><h2>Deal Value Trend</h2><strong class="large">${money(482000)}</strong>${lineChart([20, 36, 30, 62, 48, 78, 55])}</article></section>`;
+    }
+  },
+  tasks: {
+    title: "Tasks",
+    subtitle: "Plan daily activities, follow-ups, demos, calls, proposals, and reminders.",
+    action: { id: "new-lead", label: "+ Add Task" },
+    render() {
+      const counts = { High: 42, Medium: 31, Low: 18 };
+      return `${kpiCards([
+        { label: "Total Tasks", value: 78, delta: "6.5%" },
+        { label: "Due Today", value: 14, delta: "3.1%" },
+        { label: "Completed", value: 42, delta: "9.4%" },
+        { label: "Overdue", value: 12, delta: "2.3%" }
+      ])}<section class="two-col strong-left"><article class="panel">${table(["Task", "Related To", "Priority", "Due", "Status"], state.data.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.relatedTo}</td><td>${task.priority}</td><td>${task.due}</td><td>${task.status}</td></tr>`))}</article><div class="stack"><article class="panel"><h2>Priority Breakdown</h2>${Object.entries(counts).map(([key, value], index) => `<div class="progress-row"><b>${key}</b><i class="tone-${index}" style="--w:${value * 2}%"></i><span>${value}</span></div>`).join("")}</article><article class="panel">${table(["Reminder", "Time"], state.data.tasks.slice(0, 4).map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`), "No reminders")}</article></div></section>`;
+    }
+  },
+  calendar: {
+    title: "Calendar",
+    subtitle: "View meetings, demos, calls, follow-ups, and weekly sales schedule.",
+    action: { id: "new-lead", label: "+ New Event" },
+    render() {
+      const marked = [3, 8, 14, 19, 23, 28];
+      return `${kpiCards([
+        { label: "Events Today", value: 9, delta: "5.1%" },
+        { label: "Demos", value: 4, delta: "8.8%" },
+        { label: "Calls", value: 12, delta: "6.2%" },
+        { label: "Follow-ups", value: 18, delta: "11.1%" }
+      ])}<section class="two-col strong-left"><article class="panel calendar"><h2>June 2026</h2><div class="weekdays">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => `<b>${day}</b>`).join("")}</div><div class="days">${Array.from({ length: 30 }, (_, i) => `<button><span>${i + 1}</span>${marked.includes(i + 1) ? "<i></i>" : ""}</button>`).join("")}</div></article><article class="panel">${table(["Time", "Meeting", "Type"], state.data.events.map(event => `<tr><td><b>${event.time}</b></td><td>${event.meeting}</td><td>${event.type}</td></tr>`))}</article></section>`;
+    }
+  },
+  reports: {
+    title: "Reports & Analytics",
+    subtitle: "Analyze revenue, sales performance, conversion, sources, and team productivity.",
+    action: { id: "export", label: "Export Report" },
+    render() {
+      return `${kpiCards([
+        { label: "Revenue", value: "$248k", delta: "18.6%" },
+        { label: "Conversion", value: "26.8%", delta: "6.1%" },
+        { label: "Lead Sources", value: 8, delta: "4.4%" },
+        { label: "Team Activity", value: "1,204", delta: "9.7%" }
+      ])}<section class="two-col"><article class="panel"><h2>Revenue Performance</h2><strong class="large">$248,680</strong>${lineChart([42, 58, 51, 80, 65, 94, 76, 110])}</article><article class="panel"><h2>Lead Source Breakdown</h2>${barChart([{ label: "Jan", value: 42 }, { label: "Feb", value: 60 }, { label: "Mar", value: 48 }, { label: "Apr", value: 78 }, { label: "May", value: 68 }, { label: "Jun", value: 96 }])}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], [["Alex Rivera", 18, "$78,450", "28%"], ["John Smith", 15, "$62,300", "24%"], ["Sarah Chen", 13, "$55,200", "22%"], ["David Lee", 10, "$41,700", "19%"]].map(row => `<tr>${row.map((cell, i) => `<td>${i === 0 ? `<b>${cell}</b>` : cell}</td>`).join("")}</tr>`))}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`))}</article></section>`;
+    }
+  },
+  messages: {
+    title: "Messages",
+    subtitle: "Review client conversations, team chats, email threads, and lead notes.",
+    action: { id: "message", label: "New Message" },
+    render() {
+      const selected = state.data.messages.find(message => message.id === state.selectedMessageId) || state.data.messages[0];
+      return `${kpiCards([
+        { label: "Unread", value: state.data.messages.filter(m => m.unread).length + 22, delta: "5.2%" },
+        { label: "Client Chats", value: 88, delta: "8.3%" },
+        { label: "Team Threads", value: 14, delta: "2.1%" },
+        { label: "Response Rate", value: "94%", delta: "4.2%" }
+      ])}<section class="split-view messages-view"><article class="panel">${table(["Sender", "Subject", "Time"], state.data.messages.map(message => `<tr data-message-id="${message.id}" class="${selected.id === message.id ? "selected" : ""}"><td><b>${message.sender}</b></td><td>${message.subject}</td><td>${message.time}</td></tr>`))}</article><article class="panel chat"><h2>${selected.sender}</h2><p>${selected.company} · ${selected.subject}</p><div class="bubble">${selected.body[0]}</div><div class="bubble mine">Sure. I’ll send the updated proposal and include implementation options.</div><div class="bubble">${selected.body[1] || "Thanks, please attach it with the next follow-up task."}</div><div class="bubble mine">Done. I’ll attach it with the next follow-up task.</div><input placeholder="Write a message..."></article></section>`;
+    },
+    bind() {
+      document.querySelectorAll("[data-message-id]").forEach(row => row.addEventListener("click", () => {
+        state.selectedMessageId = row.dataset.messageId;
+        render();
+      }));
+    }
+  },
+  settings: {
+    title: "Settings",
+    subtitle: "Configure profile, workspace, permissions, automation, notifications, and integrations.",
+    action: { id: "logout", label: "Sign Out" },
+    render() {
+      return `${kpiCards([
+        { label: "Users", value: state.user.role === "admin" ? 18 : 1, delta: "4.1%" },
+        { label: "Roles", value: 4, delta: "0.0%" },
+        { label: "Automations", value: 12, delta: "7.5%" },
+        { label: "Integrations", value: 6, delta: "2.8%" }
+      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage admin, manager, and salesman access permissions.</p>${table(["User", "Role", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.title || user.role}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can delete contacts", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}`;
+    }
+  }
+};
+
+function followupSection() {
+  const buckets = state.data.followups;
+  return `<article class="panel full followups"><div class="panel-head"><h2>Due Follow-Up Breakdown</h2><button data-route="tasks">Open Tasks</button></div><div class="bucket-grid">${Object.entries(buckets).map(([name, items]) => `<section><h3>${name}</h3>${items.length ? items.map(item => `<div class="follow-card"><b>${item.leadName}</b><span>${item.company}</span><small>${item.stage} · ${new Date(item.due).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small><p>${item.purpose}</p><em>${item.priority}</em><div><button data-open-lead="${item.leadId}">Open Lead</button><button data-complete="${item.leadId}">Complete</button><button>Reschedule</button><button>Add Note</button></div></div>`).join("") : "<p class='muted'>No due follow-ups.</p>"}</section>`).join("")}</div></article>`;
+}
+
+function portfolioSection() {
+  const p = state.data.portfolio;
+  return `<article class="panel full portfolio"><div class="panel-head"><h2>Lead Portfolio Analytics</h2><button data-market-refresh>Refresh Intel</button></div><div class="portfolio-grid"><div class="mini-kpis">${Object.entries(p.totals).map(([key, value]) => `<div><small>${key.replace(/([A-Z])/g, " $1")}</small><strong>${key.toLowerCase().includes("value") ? money(value) : value}</strong></div>`).join("")}</div><div>${barChart(p.stages.map(stage => ({ label: stage.stage.slice(0, 4), value: stage.value || stage.count })))}</div><div class="intel-list">${state.data.marketIntel.map(item => `<article><b>${item.title}</b><p>${item.summary}</p><span>${item.geography_tags.join(", ")} · ${Math.round(item.relevance_score * 100)}% match</span></article>`).join("")}</div></div></article>`;
+}
+
+function integrationPanel() {
+  return `<article class="panel full integration-panel"><h2>AI & Data Integrations</h2><div class="integration-grid"><button data-ai-demo>Whisper AI Voice Note</button><button data-places-demo>Google Places Prospecting</button><button data-market-refresh>Market Intelligence Feed</button></div><div id="integrationOutput" class="integration-output">Use the integration controls to preview live or fallback CRM intelligence.</div></article>`;
+}
+
+async function addLead() {
+  const name = prompt("Lead contact name", "New Steel Buyer");
+  if (!name) return;
+  const company = prompt("Company", "Dubai Steel Fabricators");
+  const result = await api("/api/leads", { method: "POST", body: JSON.stringify({ name, company, source: "Manual", value: 9000 }) });
+  state.data.leads.unshift(result.lead);
+  state.notice = `${result.lead.company} added to the CRM.`;
+  state.selectedLeadId = result.lead.id;
+  setRoute("leads");
+}
+
+async function runAiDemo() {
+  const result = await api("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ text: "Client requested updated steel plate pricing and a follow-up tomorrow morning." }) });
+  state.notice = `${result.disabled ? "Fallback" : "Live"} Whisper: ${result.summary}`;
+  render();
+}
+
+document.addEventListener("click", async event => {
+  const route = event.target.closest("[data-route]")?.dataset.route;
+  if (route) setRoute(route);
+  const leadId = event.target.closest("[data-open-lead]")?.dataset.openLead;
+  if (leadId) {
+    state.selectedLeadId = leadId;
+    setRoute("leads");
+  }
+  const completeId = event.target.closest("[data-complete]")?.dataset.complete;
+  if (completeId) {
+    await api(`/api/leads/${completeId}`, { method: "PATCH", body: JSON.stringify({ status: "Contacted", purpose: "Follow-up completed" }) });
+    state.notice = "Follow-up marked complete.";
+    await bootstrap();
+  }
+  if (event.target.closest("[data-places-demo]")) {
+    const result = await api("/api/integrations/places/search?q=steel fabricators UAE");
+    el("#integrationOutput").innerHTML = `<b>${result.disabled ? "Fallback" : "Live"} Google Places</b>${result.results.map(place => `<p>${place.name || place.formatted_address} · ${place.address || place.formatted_address || ""}</p>`).join("")}`;
+  }
+  if (event.target.closest("[data-market-refresh]")) {
+    const result = await api("/api/market-intelligence");
+    const output = el("#integrationOutput");
+    if (output) output.innerHTML = `<b>${result.disabled ? "Fallback" : "Live"} Market Intelligence</b>${result.items.map(item => `<p>${item.title}</p>`).join("")}`;
+    state.notice = `${result.items.length} market intelligence items loaded.`;
+  }
+});
+
+Object.defineProperty(pages.dashboard, "title", { get() { return state.user?.role === "admin" ? "CRM Admin Dashboard" : "My Sales Dashboard"; } });
+
+async function start() {
+  const demo = bootParams.get("demo");
+  if (demo && !state.token) {
+    const creds = demo === "salesman"
+      ? ["john@alrassteel.com", "sales123"]
+      : ["admin@alrassteel.com", "admin123"];
+    await login(creds[0], creds[1]);
+    return;
+  }
+  await bootstrap();
+}
+
+start();

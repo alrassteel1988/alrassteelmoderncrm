@@ -1,0 +1,14 @@
+{
+  "name": "al-ras-steel-modern-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full-stack Al Ras Steel Leads Tracker CRM with role dashboards, lead workflows, and AI integration endpoints.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js",
+    "test": "node tests/api-smoke.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

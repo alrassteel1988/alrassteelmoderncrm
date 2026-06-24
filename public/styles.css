@@ -471,7 +471,7 @@ tbody tr { cursor: default; }
   text-transform: none;
 }
 .lead-filter-bar + .lead-table-wrap .leads-table {
-  min-width: 1320px;
+  min-width: 1440px;
 }
 .leads-table th {
   padding: 14px 14px;

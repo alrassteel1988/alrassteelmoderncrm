@@ -179,6 +179,7 @@ function leadTable(leads, selectedId, { showSalesman = false } = {}) {
     "LOCATION",
     "LAST ACTIVITY DATE",
     "ACTIVITY DESCRIPTION",
+    ...(showSalesman ? ["NEXT ACTION DATE"] : []),
     "NEXT ACTION"
   ];
   const emptyRow = `<tr><td colspan="${headings.length}" class="empty-cell">No registered leads yet.</td></tr>`;
@@ -194,6 +195,7 @@ function leadTable(leads, selectedId, { showSalesman = false } = {}) {
       <td>${displayValue(leadTableLocation(lead, showSalesman))}</td>
       <td>${displayDate(activity?.at || lead.lastActivityDate)}</td>
       <td>${displayValue(activity?.notes || activity?.type)}</td>
+      ${showSalesman ? `<td>${displayDate(lead.nextActionDate || lead.nextFollowUp)}</td>` : ""}
       <td>${displayValue(lead.nextAction || lead.nextActionDate)}</td>
     </tr>`;
   }).join("") : emptyRow;

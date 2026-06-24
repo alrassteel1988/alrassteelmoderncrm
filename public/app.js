@@ -359,21 +359,66 @@ function table(headers, rows, empty = "No records") {
   return `<div class="table-wrap"><table><thead><tr>${headers.map(head => `<th>${head}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.join("") : `<tr><td colspan="${headers.length}">${empty}</td></tr>`}</tbody></table></div>`;
 }
 
-function lineChart(values) {
+function lineChart(values, options = {}) {
+  const showAxis = Boolean(options.xLabel || options.yLabel || options.xLabels);
+  if (!showAxis) {
+    const max = Math.max(...values);
+    const points = values.map((value, index) => `${index * 58 + 14},${150 - (value / max) * 120}`).join(" ");
+    return `<svg class="line-chart" viewBox="0 0 440 170" role="img" aria-label="Revenue trend">
+      ${[30, 65, 100, 135].map(y => `<line x1="0" x2="440" y1="${y}" y2="${y}"></line>`).join("")}
+      <polyline points="${points}"></polyline>
+      ${points.split(" ").map(point => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="4"></circle>`).join("")}
+    </svg>`;
+  }
   const max = Math.max(...values);
-  const points = values.map((value, index) => `${index * 58 + 14},${150 - (value / max) * 120}`).join(" ");
-  return `<svg class="line-chart" viewBox="0 0 440 170" role="img" aria-label="Revenue trend">
-    ${[30, 65, 100, 135].map(y => `<line x1="0" x2="440" y1="${y}" y2="${y}"></line>`).join("")}
+  const xLabels = options.xLabels || values.map((_, index) => `P${index + 1}`);
+  const yLabel = options.yLabel || "Value";
+  const xLabel = options.xLabel || "Period";
+  const title = options.title || "Trend chart";
+  const plot = { left: 54, right: 426, top: 26, bottom: 142 };
+  const points = values.map((value, index) => {
+    const x = plot.left + (index / Math.max(values.length - 1, 1)) * (plot.right - plot.left);
+    const y = plot.bottom - (value / max) * (plot.bottom - plot.top);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const ticks = [0, .33, .66, 1].map(ratio => {
+    const y = plot.bottom - ratio * (plot.bottom - plot.top);
+    const value = Math.round(max * ratio);
+    return `<g class="axis-tick"><line x1="${plot.left}" x2="${plot.right}" y1="${y}" y2="${y}"></line><text x="${plot.left - 10}" y="${y + 4}" text-anchor="end">${value}</text></g>`;
+  }).join("");
+  return `<svg class="line-chart axis-chart" viewBox="0 0 460 190" role="img" aria-label="${title}">
+    <text class="axis-title y-axis-title" x="14" y="88" transform="rotate(-90 14 88)">${yLabel}</text>
+    <text class="axis-title x-axis-title" x="240" y="184" text-anchor="middle">${xLabel}</text>
+    ${ticks}
+    <line class="axis-line" x1="${plot.left}" x2="${plot.left}" y1="${plot.top}" y2="${plot.bottom}"></line>
+    <line class="axis-line" x1="${plot.left}" x2="${plot.right}" y1="${plot.bottom}" y2="${plot.bottom}"></line>
     <polyline points="${points}"></polyline>
     ${points.split(" ").map(point => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="4"></circle>`).join("")}
+    ${xLabels.map((label, index) => {
+      const x = plot.left + (index / Math.max(xLabels.length - 1, 1)) * (plot.right - plot.left);
+      return `<text class="axis-label" x="${x}" y="${plot.bottom + 20}" text-anchor="middle">${label}</text>`;
+    }).join("")}
   </svg>`;
 }
 
-function barChart(items) {
+function barChart(items, options = {}) {
+  const showAxis = Boolean(options.xLabel || options.yLabel);
   const max = Math.max(...items.map(item => item.value || item.count));
-  return `<div class="bar-chart">${items.map(item => `
-    <div><span style="height:${Math.max(18, ((item.value || item.count) / max) * 180)}px"></span><small>${item.label}</small></div>
-  `).join("")}</div>`;
+  if (!showAxis) {
+    return `<div class="bar-chart simple-bar-chart">${items.map(item => `
+      <div><span style="height:${Math.max(18, ((item.value || item.count) / max) * 180)}px"></span><small>${item.label}</small></div>
+    `).join("")}</div>`;
+  }
+  const yLabel = options.yLabel || "Value";
+  const xLabel = options.xLabel || "Category";
+  return `<div class="bar-chart axis-bar-chart" role="img" aria-label="${options.title || "Bar chart"}">
+    <span class="bar-y-title">${yLabel}</span>
+    <span class="bar-x-title">${xLabel}</span>
+    <div class="bar-y-labels"><b>${max}</b><b>${Math.round(max / 2)}</b><b>0</b></div>
+    <div class="bar-plot">${items.map(item => `
+      <div><span style="height:${Math.max(18, ((item.value || item.count) / max) * 166)}px"></span><small>${item.label}</small></div>
+    `).join("")}</div>
+  </div>`;
 }
 
 function dashboardCards() {
@@ -584,12 +629,12 @@ const pages = {
     subtitle: "Analyze revenue, sales performance, conversion, sources, and team productivity.",
     action: { id: "export", label: "Export Report" },
     render() {
-      return `${kpiCards([
+      return `<section class="reports-view">${kpiCards([
         { label: "Revenue", value: compactMoney(248000), delta: "18.6%" },
         { label: "Conversion", value: "26.8%", delta: "6.1%" },
         { label: "Lead Sources", value: 8, delta: "4.4%" },
         { label: "Team Activity", value: "1,204", delta: "9.7%" }
-      ])}<section class="two-col"><article class="panel"><h2>Revenue Performance</h2><strong class="large">${money(248680)}</strong>${lineChart([42, 58, 51, 80, 65, 94, 76, 110])}</article><article class="panel"><h2>Lead Source Breakdown</h2>${barChart([{ label: "Jan", value: 42 }, { label: "Feb", value: 60 }, { label: "Mar", value: 48 }, { label: "Apr", value: 78 }, { label: "May", value: 68 }, { label: "Jun", value: 96 }])}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], [["Alex Rivera", 18, money(78450), "28%"], ["John Smith", 15, money(62300), "24%"], ["Sarah Chen", 13, money(55200), "22%"], ["David Lee", 10, money(41700), "19%"]].map(row => `<tr>${row.map((cell, i) => `<td>${i === 0 ? `<b>${cell}</b>` : cell}</td>`).join("")}</tr>`))}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`))}</article></section>`;
+      ])}<section class="two-col"><article class="panel chart-panel"><h2>Revenue Performance</h2><strong class="large">${money(248680)}</strong>${lineChart([42, 58, 51, 80, 65, 94, 76, 110], { title: "Monthly revenue performance", xLabel: "Month", yLabel: "Revenue (AED k)", xLabels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"] })}</article><article class="panel chart-panel"><h2>Lead Source Breakdown</h2>${barChart([{ label: "Jan", value: 42 }, { label: "Feb", value: 60 }, { label: "Mar", value: 48 }, { label: "Apr", value: 78 }, { label: "May", value: 68 }, { label: "Jun", value: 96 }], { title: "Lead source count by month", xLabel: "Month", yLabel: "Lead count" })}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], [["Alex Rivera", 18, money(78450), "28%"], ["John Smith", 15, money(62300), "24%"], ["Sarah Chen", 13, money(55200), "22%"], ["David Lee", 10, money(41700), "19%"]].map(row => `<tr>${row.map((cell, i) => `<td>${i === 0 ? `<b>${cell}</b>` : cell}</td>`).join("")}</tr>`))}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`))}</article></section></section>`;
     }
   },
   messages: {

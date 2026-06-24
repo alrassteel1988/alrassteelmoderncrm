@@ -366,7 +366,7 @@ function safeUser(user) {
 }
 
 function visibleLeads(user) {
-  return user.role === "admin" ? leads : leads.filter(lead => lead.ownerId === user.id || lead.territory === user.territory);
+  return user.role === "admin" ? leads : leads.filter(lead => lead.ownerId === user.id);
 }
 
 function visibleDeals(user) {

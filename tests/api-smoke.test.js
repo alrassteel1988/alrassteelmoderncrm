@@ -139,6 +139,28 @@ function auth(token) {
     assert.equal(salesmanBootstrap.body.leads.length, 1);
     assert.ok(salesmanBootstrap.body.leads.every(lead => lead.ownerId === salesmanCreate.body.user.id));
 
+    const salesmanCreatedLead = await request("/api/leads", {
+      method: "POST",
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({
+        companyName: "Salesman Owned Steel",
+        sector: "Contractor",
+        tier: "2",
+        territory: "UAE-South",
+        stage: "PROSPECT",
+        estimatedValue: 8500,
+        nextAction: "Admin dashboard visibility check"
+      })
+    });
+    assert.equal(salesmanCreatedLead.response.status, 201);
+    assert.equal(salesmanCreatedLead.body.lead.ownerId, salesmanCreate.body.user.id);
+
+    const adminAfterSalesmanLead = await request("/api/bootstrap", { headers: auth(adminLogin.body.token) });
+    assert.equal(adminAfterSalesmanLead.response.status, 200);
+    assert.equal(adminAfterSalesmanLead.body.leads.length, 2);
+    assert.ok(adminAfterSalesmanLead.body.leads.some(lead => lead.id === salesmanCreatedLead.body.lead.id));
+    assert.equal(adminAfterSalesmanLead.body.dashboard.kpis.newLeads, 2);
+
     const deleteRequest = await request(`/api/leads/${created.body.lead.id}/delete-request`, {
       method: "POST",
       headers: auth(salesmanLogin.body.token),

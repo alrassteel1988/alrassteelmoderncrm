@@ -84,6 +84,68 @@ const pct = value => `${Number(value || 0).toLocaleString()}%`;
 const el = selector => document.querySelector(selector);
 const ownerName = id => state.data?.users?.find(user => user.id === id)?.name || (id === state.user?.id ? state.user.name : "John Smith");
 
+function statusMeta(status) {
+  const key = String(status || "").toUpperCase();
+  const map = {
+    PROSPECT: { label: "Prospect", tone: "active" },
+    OUTREACH: { label: "Negotiation", tone: "negotiation" },
+    ENGAGED: { label: "Under review", tone: "review" },
+    SAMPLING: { label: "Under review", tone: "review" },
+    ACTIVE: { label: "Closed won", tone: "closed" },
+    DORMANT: { label: "Lost", tone: "lost" },
+    NEW: { label: "Prospect", tone: "active" },
+    CONTACTED: { label: "Negotiation", tone: "negotiation" },
+    WON: { label: "Closed won", tone: "closed" }
+  };
+  return map[key] || { label: status || "Prospect", tone: "active" };
+}
+
+function statusBadge(status) {
+  const meta = statusMeta(status);
+  return `<span class="status-badge ${meta.tone}"><i aria-hidden="true"></i>${meta.label}</span>`;
+}
+
+function daysAgo(dateValue) {
+  const date = dateValue ? new Date(dateValue) : null;
+  if (!date || Number.isNaN(date.getTime())) return "No activity";
+  const diff = Math.max(0, Math.round((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000)));
+  if (diff === 0) return "Today";
+  if (diff === 1) return "1 day ago";
+  return `${diff} days ago`;
+}
+
+function leadCard(lead, selected) {
+  return `<article class="lead-card ${selected ? "selected" : ""}" data-lead-id="${lead.id}">
+    <div class="lead-card-header">
+      <strong>${lead.companyName || lead.company}</strong>
+      ${statusBadge(lead.status)}
+    </div>
+    <p class="lead-contact">Contact: ${lead.contactPerson || lead.name || "Not set"}</p>
+    <p class="lead-product">${lead.productInterest || lead.sector || "Structural steel"}</p>
+    <div class="lead-meta">
+      <div><span>Last contact:</span><b>${daysAgo(lead.lastActivityDate)}</b></div>
+      <div><span>Estimated value:</span><b>${money(lead.estimatedValue || lead.value)}</b></div>
+      <div><span>Owner:</span><b>${ownerName(lead.ownerId)}</b></div>
+    </div>
+    <div class="lead-card-actions"><button>Call</button><button>Schedule</button></div>
+  </article>`;
+}
+
+function activityTimeline(activities) {
+  const items = (activities || []).slice(0, 6);
+  if (!items.length) return `<p class="muted">No activity yet.</p>`;
+  return `<div class="activity-timeline">${items.map(activity => {
+    const type = String(activity.type || "note").toLowerCase();
+    const tone = type.includes("email") ? "email" : type.includes("note") ? "note" : "call";
+    return `<article class="timeline-item ${tone}">
+      <span class="timeline-dot"></span>
+      <time>${daysAgo(activity.at)} · ${new Date(activity.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+      <strong>${activity.type}</strong>
+      <p>${activity.notes || "No notes"}</p>
+    </article>`;
+  }).join("")}</div>`;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -252,8 +314,9 @@ function debounce(fn, wait) {
 function kpiCards(cards) {
   return `<section class="kpi-grid">${cards.map((card, index) => `
     <article class="kpi-card">
-      <span class="kpi-icon tone-${index % 4}"></span>
-      <div><small>${card.label}</small><strong>${card.value}</strong><em>↑ ${card.delta}</em></div>
+      <strong>${card.value}</strong>
+      <small>${card.label}</small>
+      <em>${card.delta ? `up ${card.delta}` : ""}</em>
     </article>
   `).join("")}</section>`;
 }
@@ -303,7 +366,7 @@ const pages = {
         <section class="dashboard-grid">
           <article class="panel wide"><h2>${state.user.role === "admin" ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>↑ 18.6% this month</em></div>${lineChart(d.salesTrend)}</article>
           <article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of $115k</span></div><footer><b>$78,450 achieved</b><span>$36,550 to go</span></footer></article>
-          <article class="panel pipeline"><h2>${state.user.role === "admin" ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${stage.stage}</b><strong>${money(stage.value)}</strong><small>${stage.count} deals</small><button data-route="deals">View Deals →</button></div>`).join("")}</div></article>
+          <article class="panel pipeline"><h2>${state.user.role === "admin" ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${statusMeta(stage.stage).label}</b><strong>${money(stage.value)}</strong><small>${stage.count} accounts</small><button data-route="deals">View Deals</button></div>`).join("")}</div></article>
           <article class="panel">${table(["Time", "Activity"], d.schedule.map(event => `<tr><td><b>${event.time}</b></td><td>${event.meeting}</td></tr>`))}</article>
           <article class="panel">${table(["Opportunity", "Value", "Stage"], state.data.deals.slice(0, 5).map(deal => `<tr><td><b>${deal.title}</b></td><td>${money(deal.value)}</td><td>${deal.stage}</td></tr>`))}</article>
           <article class="panel">${table(["Task", "Due"], d.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`))}</article>
@@ -324,10 +387,10 @@ const pages = {
       return `<section class="split-view">
         <article class="panel leads-list">
           <div class="panel-head"><h2>Leads List</h2><button>View All</button></div>
-          ${table(["Lead", "Company", "Status", "Score", "Owner"], leads.map(lead => `<tr class="${selected?.id === lead.id ? "selected" : ""}" data-lead-id="${lead.id}"><td><b>${lead.name}</b></td><td>${lead.company}</td><td>${lead.status}</td><td>${lead.score}</td><td>${ownerName(lead.ownerId)}</td></tr>`))}
+          <div class="lead-card-grid">${leads.map(lead => leadCard(lead, selected?.id === lead.id)).join("")}</div>
         </article>
         <article class="panel profile-card">
-          ${selected ? `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} · ${selected.sector} · ${selected.territory}</p><mark>${selected.status}</mark></div></div>
+          ${selected ? `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} · ${selected.sector} · ${selected.territory}</p>${statusBadge(selected.status)}</div></div>
           <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>More</button></div>
           <dl>${[["Primary Contact", selected.contactPerson], ["Title", selected.primaryTitle], ["Email", selected.email], ["Phone", selected.phone], ["Legal Name", selected.legalName], ["Country / Emirate", selected.countryEmirate], ["Tier", selected.tier], ["Website", selected.website], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${value || "—"}</dd>`).join("")}</dl>
           <div class="score"><span>Relationship Health</span><strong>${selected.relationshipHealth} · ${selected.healthScore}/100</strong><i style="width:${selected.healthScore}%"></i><p>${selected.healthReason}</p></div>
@@ -337,7 +400,7 @@ const pages = {
           <form id="activityForm" class="mini-form"><select name="type">${["Phone Call", "Email", "In-Person Meeting", "Site Visit", "Video Call", "Quotation Sent", "Order Placed"].map(type => `<option>${type}</option>`).join("")}</select><input name="quotationRef" placeholder="Quotation ref"><textarea name="notes" placeholder="Activity notes" required></textarea><button>Log Activity</button></form>
           <h3>Structured PMR</h3>
           <form id="pmrForm" class="mini-form"><input name="meetingDate" type="date" required><input name="productsDiscussed" placeholder="Products discussed"><input name="competitorsMentioned" placeholder="Competitors mentioned"><input name="complianceRequirements" placeholder="ISO, ICV, DNV..."><select name="relationshipHeatScore">${[1,2,3,4,5].map(n => `<option>${n}</option>`).join("")}</select><select name="directorActionRequired">${["None", "Awareness only", "Attend next visit", "Direct contact"].map(x => `<option>${x}</option>`).join("")}</select><textarea name="notes" placeholder="PMR notes"></textarea><button>Save PMR</button></form>
-          <h3>Recent Activity</h3><ul>${(state.data.activities || []).filter(activity => activity.companyId === selected.companyId).slice(0, 5).map(activity => `<li>${activity.type}: ${activity.notes}</li>`).join("") || "<li>No activity yet.</li>"}</ul>` : ""}
+          <h3>Recent Activity</h3>${activityTimeline((state.data.activities || []).filter(activity => activity.companyId === selected.companyId))}` : ""}
         </article>
       </section>`;
     },
@@ -361,14 +424,22 @@ const pages = {
     subtitle: "Track opportunities, deal value, stages, owners, and close probability.",
     action: { id: "new-lead", label: "+ New Deal" },
     render() {
-      const stages = ["New", "Contacted", "Proposal", "Won"];
+      const stageGroups = [
+        { title: "Prospect", statuses: ["PROSPECT", "New"] },
+        { title: "Negotiation", statuses: ["OUTREACH", "Contacted"] },
+        { title: "Under Review", statuses: ["ENGAGED", "SAMPLING", "Proposal"] },
+        { title: "Closed Won", statuses: ["ACTIVE", "Won"] }
+      ];
       return `${kpiCards([
         { label: "Open Deals", value: state.data.deals.length, delta: "8.2%" },
         { label: "Pipeline Value", value: money(state.data.deals.reduce((sum, deal) => sum + deal.value, 0)), delta: "13.8%" },
         { label: "Won Deals", value: state.data.deals.filter(deal => deal.stage === "Won").length, delta: "15.3%" },
         { label: "Avg. Deal Size", value: money(12600), delta: "5.9%" }
       ])}
-      <article class="panel full"><h2>Kanban Deal Board</h2><div class="kanban">${stages.map(stage => `<section><h3>${stage}</h3>${state.data.deals.filter(deal => deal.stage === stage).concat(state.data.leads.filter(lead => lead.stage === stage).slice(0, 2)).map(item => `<div class="deal-card"><b>${item.title || item.company}</b><span>${money(item.value)}</span></div>`).join("")}</section>`).join("")}</div></article>
+      <article class="panel full"><h2>Kanban Deal Board</h2><div class="kanban">${stageGroups.map(group => {
+        const items = state.data.deals.filter(deal => group.statuses.includes(deal.stage)).concat(state.data.leads.filter(lead => group.statuses.includes(lead.status) || group.statuses.includes(lead.stage)).slice(0, 3));
+        return `<section><header><h3>${group.title}</h3><span>${items.length}</span></header>${items.map(item => `<div class="deal-card"><b>${item.title || item.companyName || item.company}</b><span>${money(item.value || item.estimatedValue)}</span></div>`).join("")}</section>`;
+      }).join("")}</div></article>
       <section class="two-col"><article class="panel">${table(["Deal", "Company", "Stage", "Close", "Value"], state.data.deals.map(deal => `<tr><td><b>${deal.title}</b></td><td>${deal.company}</td><td>${deal.stage}</td><td>${deal.close}</td><td>${money(deal.value)}</td></tr>`))}</article><article class="panel"><h2>Deal Value Trend</h2><strong class="large">${money(482000)}</strong>${lineChart([20, 36, 30, 62, 48, 78, 55])}</article></section>`;
     }
   },

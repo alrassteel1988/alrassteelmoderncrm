@@ -860,6 +860,12 @@ dd { margin: 0; font-weight: 900; }
   font-size: 12px;
   font-weight: 900;
 }
+.lead-modal .lead-form-grid label {
+  font-family: var(--font-main);
+  color: #151a23;
+  opacity: 1;
+  font-weight: 600;
+}
 .lead-form-grid input, .lead-form-grid select, .lead-form-grid textarea,
 .mini-form input, .mini-form select, .mini-form textarea {
   width: 100%;
@@ -869,6 +875,20 @@ dd { margin: 0; font-weight: 900; }
   color: var(--ink);
   padding: 10px 12px;
   min-height: 42px;
+}
+.lead-modal .lead-form-grid input,
+.lead-modal .lead-form-grid select,
+.lead-modal .lead-form-grid textarea {
+  font-family: var(--font-main);
+  color: #030712;
+  opacity: 1;
+  font-weight: 500;
+}
+.lead-modal .lead-form-grid input::placeholder,
+.lead-modal .lead-form-grid textarea::placeholder {
+  color: #4b5563;
+  opacity: 1;
+  font-weight: 400;
 }
 .lead-form-grid textarea, .mini-form textarea { min-height: 76px; resize: vertical; }
 .span-2 { grid-column: span 2; }
@@ -925,7 +945,7 @@ dd { margin: 0; font-weight: 900; }
 }
 .place-candidates b, .place-candidates span, .place-candidates small { display: block; }
 .place-candidates span, .place-candidates small { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.ai-note-field > span { font-weight: 900; color: var(--muted); }
+.ai-note-field > span { font-weight: 600; color: #151a23; opacity: 1; }
 .note-tools {
   display: flex;
   align-items: center;

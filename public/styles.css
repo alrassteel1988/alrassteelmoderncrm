@@ -914,8 +914,8 @@ dd { margin: 0; font-weight: 900; }
 .modal-actions .primary { border: 0; background: linear-gradient(110deg, var(--green), var(--violet)); }
 .lead-ai-assist {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(86px, 104px);
+  gap: 8px;
   align-items: center;
   background: #f3fbf8;
   border: 1px solid #cceee3;
@@ -935,6 +935,15 @@ dd { margin: 0; font-weight: 900; }
   color: #fff;
   padding: 10px 14px;
   font-weight: 900;
+}
+.lead-ai-assist > button {
+  min-width: 0;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .place-candidates {
   grid-column: 1 / -1;

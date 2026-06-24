@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+loadLocalEnv();
+
 const PORT = Number(process.env.PORT || 4177);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const sessions = new Map();
@@ -17,6 +19,21 @@ const LIVE_ARG_ADD_LEAD_FIELDS = [
   "Next action date", "First order date", "Est. monthly volume", "Product interest", "Tags", "Quotation ref",
   "Products/services remarks", "Next action", "Notes"
 ];
+
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([^=]+)=(.*)$/);
+    if (!match) continue;
+    const key = match[1].trim();
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
 
 const users = [
   { id: "u-admin", name: "Alex Rivera", email: "admin@alrassteel.com", password: "admin123", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" },
@@ -155,6 +172,16 @@ const marketIntel = [
   { id: "mi3", title: "RAK oil and gas suppliers expand material procurement", source: "Market Feed", geography_tags: ["Ras Al Khaimah"], sector_tags: ["Oil & Gas"], companies_mentioned: ["Stellar Solutions"], relevance_score: 0.71, summary: "Suppliers are sourcing certified structural materials for Q3 projects.", published_at: "2026-06-17T08:00:00+04:00" }
 ];
 
+const fallbackIndustryNews = [
+  { title: "GCC construction tender pipeline keeps steel demand resilient", source: "Al Ras Market Desk", description: "Contract awards and infrastructure work continue to support rebar, plate, and beam enquiries.", url: "#", publishedAt: "2026-06-24T06:00:00Z", category: "Construction" },
+  { title: "Metal fabrication shops report shorter quote validity windows", source: "Al Ras Market Desk", description: "Fabricators are watching mill pricing and freight closely before committing to large-volume offers.", url: "#", publishedAt: "2026-06-24T05:30:00Z", category: "Metal Fabrication" },
+  { title: "Oil and gas maintenance activity drives certified steel demand", source: "Al Ras Market Desk", description: "Shutdown and maintenance schedules are creating demand for certified pipe, plate, and structural sections.", url: "#", publishedAt: "2026-06-24T05:00:00Z", category: "Oil & Gas" },
+  { title: "EPC contractors seek faster material availability for Q3 projects", source: "Al Ras Market Desk", description: "Procurement teams are prioritizing stock availability and documentation readiness.", url: "#", publishedAt: "2026-06-24T04:30:00Z", category: "EPC" },
+  { title: "Regional metals buyers track freight and port congestion risk", source: "Al Ras Market Desk", description: "Import timing remains a key negotiation point for customers managing site deadlines.", url: "#", publishedAt: "2026-06-24T04:00:00Z", category: "Metals" },
+  { title: "Construction payment terms remain a key account risk signal", source: "Al Ras Market Desk", description: "Sales teams are monitoring extended-term requests and late-payment patterns alongside opportunities.", url: "#", publishedAt: "2026-06-24T03:30:00Z", category: "Credit Climate" },
+  { title: "Industrial projects create cross-sell openings for steel service centers", source: "Al Ras Market Desk", description: "Project packages increasingly combine beams, plates, pipes, and fabrication-ready services.", url: "#", publishedAt: "2026-06-24T03:00:00Z", category: "Industrial" }
+];
+
 function send(res, status, payload, headers = {}) {
   const body = JSON.stringify(payload);
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body), ...headers });
@@ -174,6 +201,93 @@ function readBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function supabaseConfig() {
+  const url = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
+  const key = /^your_/i.test(rawKey) ? "" : rawKey;
+  return { url, key, enabled: Boolean(url && key) };
+}
+
+async function supabaseRest(table, { method = "GET", query = "", body, prefer } = {}) {
+  const config = supabaseConfig();
+  if (!config.enabled) return { disabled: true, data: null };
+  const response = await fetch(`${config.url}/rest/v1/${table}${query}`, {
+    method,
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      "Content-Type": "application/json",
+      ...(prefer ? { Prefer: prefer } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const error = new Error(data?.message || data?.error || `Supabase ${response.status}`);
+    error.status = response.status;
+    error.supabase = data;
+    throw error;
+  }
+  return { disabled: false, data };
+}
+
+async function syncSupabaseLeadsOnce() {
+  if (!supabaseConfig().enabled) return { disabled: true };
+  try {
+    const { data } = await supabaseRest("crm_leads", { query: "?select=payload&order=created_at.desc" });
+    let added = 0;
+    for (const row of data || []) {
+      const lead = row.payload;
+      if (!lead?.id || leads.some(item => item.id === lead.id || item.companyId === lead.companyId)) continue;
+      leads.unshift(normalizeCompanyRecord(lead, leads.length));
+      added += 1;
+    }
+    return { disabled: false, added };
+  } catch (error) {
+    return { disabled: false, error: error.message };
+  }
+}
+
+async function persistLeadToSupabase(lead) {
+  try {
+    await supabaseRest("crm_leads", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: lead.id,
+        company_id: lead.companyId,
+        company_name: lead.companyName,
+        owner_id: lead.ownerId,
+        territory: lead.territory,
+        status: lead.status,
+        payload: lead
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
+  }
+}
+
+async function persistActivityToSupabase(activity) {
+  try {
+    await supabaseRest("crm_activities", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: activity.id,
+        company_id: activity.companyId,
+        lead_id: activity.leadId,
+        payload: activity
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
+  }
 }
 
 function currentUser(req) {
@@ -334,6 +448,71 @@ function portfolioAnalytics(user) {
   };
 }
 
+function fridayFor(date = new Date()) {
+  const target = new Date(date);
+  const day = target.getDay();
+  const diff = (5 - day + 7) % 7;
+  target.setDate(target.getDate() + diff);
+  return target.toISOString().slice(0, 10);
+}
+
+function weeklyReportFor(user) {
+  const scopedLeads = visibleLeads(user).map(decorateLead);
+  const scopedDeals = visibleDeals(user);
+  const scopedTasks = visibleTasks(user);
+  const flaggedAccounts = scopedLeads
+    .filter(lead => lead.relationshipHealth !== "GREEN" || lead.status === "DORMANT")
+    .slice(0, 4)
+    .map(lead => ({
+      companyId: lead.companyId,
+      companyName: lead.companyName,
+      reason: lead.healthReason,
+      creditContext: `Tier ${lead.tier} · ${lead.territory}`,
+      disposition: "Needs rep disposition"
+    }));
+  const pipelineConfirmations = scopedDeals.slice(0, 4).map(deal => ({
+    id: deal.id,
+    account: deal.company,
+    expectedValue: deal.value,
+    likelihood: deal.probability >= 70 ? "Good chance" : deal.probability >= 45 ? "Could go either way" : "Early",
+    timing: deal.close,
+    blocker: deal.probability >= 70 ? "Risk note required" : "Confirm timing"
+  }));
+  const securedOrders = scopedDeals
+    .filter(deal => deal.stage === "Won")
+    .map(deal => ({ account: deal.company, value: deal.value, terms: "ERP terms", status: "PO → Ack", problem: "No flagged exception" }));
+  const blockers = [
+    ...flaggedAccounts.map(item => `${item.companyName}: disposition required`),
+    ...pipelineConfirmations.filter(item => item.blocker).map(item => `${item.account}: ${item.blocker}`),
+    scopedTasks.some(task => task.status !== "Done") ? "Next-week plan must be confirmed from open tasks" : "",
+    "Digital attestation not signed"
+  ].filter(Boolean);
+  const totalRequired = Math.max(blockers.length + 7, 7);
+  return {
+    state: blockers.length ? "In Progress" : "Ready for Sign-Off",
+    weekEnding: fridayFor(now),
+    rep: user.name,
+    branch: user.territory || "Mixed",
+    completion: Math.max(0, Math.round(((totalRequired - blockers.length) / totalRequired) * 100)),
+    blockers,
+    securedOrders,
+    pipelineConfirmations,
+    flaggedAccounts,
+    marketOverlay: {
+      demand: "No selection",
+      pricing: "No selection",
+      creditClimate: "No selection",
+      projects: "No note yet",
+      nextWeekPlan: scopedTasks.filter(task => task.status !== "Done").slice(0, 3).map(task => task.title)
+    },
+    directorQueue: user.role === "admin" ? {
+      missingReports: users.filter(person => person.role !== "admin" && person.status !== "Active").map(person => person.name),
+      contradictionFlags: flaggedAccounts.slice(0, 2).map(item => `${item.companyName}: credit/context requires review`),
+      thinReports: ["No complete-but-thin reports yet"]
+    } : null
+  };
+}
+
 async function transcribeWithWhisper(payload) {
   const text = String(payload.text || payload.note || "").trim();
   if (!process.env.OPENAI_API_KEY) {
@@ -344,11 +523,54 @@ async function transcribeWithWhisper(payload) {
       actions: ["Create follow-up task", "Update lead notes", "Refresh lead score"]
     };
   }
+  if (payload.audioBase64) {
+    const audio = Buffer.from(String(payload.audioBase64).replace(/^data:.*?;base64,/, ""), "base64");
+    const mimeType = payload.mimeType || "audio/webm";
+    const filename = payload.fileName || `lead-note.${mimeType.includes("mp4") ? "mp4" : mimeType.includes("mpeg") ? "mp3" : "webm"}`;
+    const form = new FormData();
+    form.append("file", new Blob([audio], { type: mimeType }), filename);
+    form.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1");
+    form.append("response_format", "json");
+    const response = await fetch("https://api.openai.com/v1/audio/translations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: form
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || "Whisper transcription failed.");
+    return {
+      disabled: false,
+      transcript: data.text || "",
+      summary: "Voice note translated to English and inserted into lead notes.",
+      actions: ["Update lead notes", "Create follow-up task"]
+    };
+  }
   return {
     disabled: false,
     transcript: text || "Live Whisper endpoint ready. Send audio handling through your production upload adapter.",
     summary: "OpenAI key detected; wire multipart audio upload when deploying behind a storage adapter.",
     actions: ["Persist transcript", "Attach to lead activity"]
+  };
+}
+
+function placeToLeadFields(place) {
+  const address = place.formattedAddress || place.formatted_address || place.address || place.vicinity || "";
+  const website = place.websiteUri || place.website || "";
+  const phone = place.nationalPhoneNumber || place.internationalPhoneNumber || place.formatted_phone_number || place.international_phone_number || place.phone || "";
+  const mapsUrl = place.googleMapsUri || place.url || (place.place_id ? `https://www.google.com/maps/place/?q=place_id:${place.place_id}` : "");
+  const types = (place.types || []).map(type => type.replace(/_/g, " ")).join(", ");
+  return {
+    companyName: place.displayName?.text || place.name || "",
+    legalName: place.displayName?.text || place.name || "",
+    location: address.split(",").slice(-2).join(", ").trim() || address,
+    address,
+    phone,
+    website,
+    googleMapsUrl: mapsUrl,
+    businessCategory: types,
+    industry: types,
+    source: "Google Places",
+    notes: [place.rating ? `Google rating: ${place.rating}` : "", place.user_ratings_total ? `${place.user_ratings_total} Google reviews` : ""].filter(Boolean).join(". ")
   };
 }
 
@@ -358,18 +580,47 @@ async function googlePlacesSearch(query) {
     return {
       disabled: true,
       results: [
-        { name: "Emirates Steel Fabrication LLC", address: "Al Quoz, Dubai", rating: 4.4, phone: "+971 4 555 0198", sector: "Fabricator" },
-        { name: "Gulf Marine Steel Works", address: "Jebel Ali, Dubai", rating: 4.2, phone: "+971 4 555 0112", sector: "Marine" }
+        { place_id: "fallback-1", name: "Emirates Steel Fabrication LLC", formatted_address: "Al Quoz, Dubai, UAE", rating: 4.4, phone: "+971 4 555 0198", types: ["steel_fabricator"] },
+        { place_id: "fallback-2", name: "Gulf Marine Steel Works", formatted_address: "Jebel Ali, Dubai, UAE", rating: 4.2, phone: "+971 4 555 0112", types: ["marine_contractor"] }
       ],
       reason: "GOOGLE_PLACES_API_KEY is not configured."
     };
   }
-  const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-  url.searchParams.set("query", query || "steel fabricators UAE");
-  url.searchParams.set("key", key);
-  const response = await fetch(url);
+  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.rating,places.userRatingCount,places.types,places.nationalPhoneNumber,places.websiteUri"
+    },
+    body: JSON.stringify({ textQuery: query || "steel fabricators UAE", regionCode: "AE", maxResultCount: 8 })
+  });
   const data = await response.json();
-  return { disabled: false, results: (data.results || []).slice(0, 8) };
+  if (!response.ok) throw new Error(data.error?.message || `Google Places ${response.status}`);
+  const results = (data.places || []).slice(0, 8).map(place => ({
+    ...place,
+    place_id: place.id,
+    name: place.displayName?.text || "",
+    formatted_address: place.formattedAddress || "",
+    rating: place.rating,
+    user_ratings_total: place.userRatingCount
+  }));
+  return { disabled: false, results };
+}
+
+async function googlePlaceDetails(placeId) {
+  const fallback = (await googlePlacesSearch("steel fabricators UAE")).results.find(place => place.place_id === placeId);
+  const key = process.env.GOOGLE_PLACES_API_KEY;
+  if (!key) return { disabled: true, place: fallback || null, fields: placeToLeadFields(fallback || {}) };
+  const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    headers: {
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "id,displayName,formattedAddress,nationalPhoneNumber,internationalPhoneNumber,websiteUri,googleMapsUri,rating,userRatingCount,types,businessStatus"
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || `Google Places ${response.status}`);
+  return { disabled: false, place: data, fields: placeToLeadFields(data || {}) };
 }
 
 async function marketFeed() {
@@ -379,6 +630,33 @@ async function marketFeed() {
   const response = await fetch(apiUrl, { headers: { Authorization: `Bearer ${key}` } });
   const data = await response.json();
   return { disabled: false, items: Array.isArray(data.items) ? data.items : data };
+}
+
+async function industryNewsFeed() {
+  const key = process.env.NEWS_API_KEY || process.env.NEWSAPI_KEY || "";
+  const query = 'construction OR metals OR "oil and gas" OR "metal fabrication" OR EPC OR "steel fabrication"';
+  if (!key) return { disabled: true, articles: fallbackIndustryNews, reason: "NEWS_API_KEY is not configured." };
+  const url = new URL("https://newsapi.org/v2/everything");
+  url.searchParams.set("q", query);
+  url.searchParams.set("searchIn", "title,description");
+  url.searchParams.set("language", "en");
+  url.searchParams.set("sortBy", "publishedAt");
+  url.searchParams.set("pageSize", "7");
+  const response = await fetch(url, { headers: { "X-Api-Key": key, "User-Agent": "AlRasSteelModernCRM/1.0" } });
+  const data = await response.json();
+  if (!response.ok || data.status === "error") {
+    return { disabled: true, articles: fallbackIndustryNews, reason: data.message || `News API ${response.status}` };
+  }
+  const articles = (data.articles || []).filter(article => article.title && article.url).slice(0, 7).map(article => ({
+    title: article.title,
+    source: article.source?.name || "News API",
+    description: article.description || "",
+    url: article.url,
+    publishedAt: article.publishedAt,
+    image: article.urlToImage || "",
+    category: "Industry"
+  }));
+  return { disabled: false, articles: articles.length >= 7 ? articles : fallbackIndustryNews, totalResults: data.totalResults };
 }
 
 function serveStatic(req, res) {
@@ -420,7 +698,9 @@ async function handleApi(req, res) {
       integrations: {
         whisper: Boolean(process.env.OPENAI_API_KEY),
         googlePlaces: Boolean(process.env.GOOGLE_PLACES_API_KEY),
-        marketIntelligence: Boolean(process.env.MARKET_INTELLIGENCE_API_URL && process.env.MARKET_INTELLIGENCE_API_KEY)
+        marketIntelligence: Boolean(process.env.MARKET_INTELLIGENCE_API_URL && process.env.MARKET_INTELLIGENCE_API_KEY),
+        supabase: supabaseConfig().enabled,
+        newsApi: Boolean(process.env.NEWS_API_KEY || process.env.NEWSAPI_KEY)
       }
     });
   }
@@ -428,6 +708,8 @@ async function handleApi(req, res) {
   if (!user) return send(res, 401, { error: "Authentication required." });
 
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
+    const supabaseSync = await syncSupabaseLeadsOnce();
+    const industryNews = await industryNewsFeed();
     const scopedLeads = visibleLeads(user).map(decorateLead);
     return send(res, 200, {
       user,
@@ -442,10 +724,12 @@ async function handleApi(req, res) {
       followups: followupBuckets(user),
       portfolio: portfolioAnalytics(user),
       marketIntel,
+      industryNews,
+      weeklyReport: weeklyReportFor(user),
       activities: activities.filter(activity => scopedLeads.some(lead => lead.companyId === activity.companyId || lead.id === activity.leadId)),
       pmrs: pmrs.filter(pmr => scopedLeads.some(lead => lead.companyId === pmr.companyId || lead.id === pmr.leadId)),
       configAudit: user.role === "admin" ? configAudit : [],
-      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS }
+      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, sync: supabaseSync } }
     });
   }
   if (req.method === "POST" && url.pathname === "/api/leads/check-duplicate") {
@@ -507,7 +791,7 @@ async function handleApi(req, res) {
       notes: body.notes ? [body.notes] : []
     };
     leads.unshift(normalizeCompanyRecord(lead, leads.length));
-    activities.unshift({
+    const activity = {
       id: `a${activities.length + 1}`,
       companyId: lead.companyId,
       leadId: lead.id,
@@ -517,8 +801,11 @@ async function handleApi(req, res) {
       notes: `Company record created. Next action: ${lead.nextAction || "Initial qualification"}`,
       quotationRef: lead.quotationRef || "",
       pmrLinked: false
-    });
-    return send(res, 201, { lead: decorateLead(lead), duplicates: duplicateCandidates(companyName, user) });
+    };
+    activities.unshift(activity);
+    const supabase = await persistLeadToSupabase(lead);
+    await persistActivityToSupabase(activity);
+    return send(res, 201, { lead: decorateLead(lead), duplicates: duplicateCandidates(companyName, user), supabase });
   }
   if (req.method === "PATCH" && url.pathname.startsWith("/api/leads/")) {
     const id = url.pathname.split("/").pop();
@@ -547,6 +834,7 @@ async function handleApi(req, res) {
       pmrLinked: false
     };
     activities.unshift(activity);
+    await persistActivityToSupabase(activity);
     return send(res, 201, { activity });
   }
   if (req.method === "POST" && url.pathname === "/api/pmrs") {
@@ -565,6 +853,7 @@ async function handleApi(req, res) {
       pmrLinked: true
     };
     activities.unshift(activity);
+    await persistActivityToSupabase(activity);
     const pmr = {
       id: `pmr${pmrs.length + 1}`,
       companyId: lead.companyId,
@@ -639,9 +928,23 @@ async function handleApi(req, res) {
   if (req.method === "GET" && url.pathname === "/api/integrations/places/search") {
     return send(res, 200, await googlePlacesSearch(url.searchParams.get("q")));
   }
+  if (req.method === "POST" && url.pathname === "/api/integrations/places/candidates") {
+    const body = await readBody(req);
+    const query = [body.companyName || body.company || "", body.location || body.countryEmirate || "UAE"].filter(Boolean).join(" ");
+    const result = await googlePlacesSearch(query);
+    return send(res, 200, { ...result, fields: result.results.length === 1 ? placeToLeadFields(result.results[0]) : null });
+  }
+  if (req.method === "POST" && url.pathname === "/api/integrations/places/details") {
+    const body = await readBody(req);
+    if (!body.placeId) return send(res, 400, { error: "placeId is required." });
+    return send(res, 200, await googlePlaceDetails(body.placeId));
+  }
   if (req.method === "GET" && url.pathname === "/api/market-intelligence") {
     const feed = await marketFeed();
     return send(res, 200, { ...feed, matchedLeadIds: visibleLeads(user).map(lead => lead.id) });
+  }
+  if (req.method === "GET" && url.pathname === "/api/news/industry") {
+    return send(res, 200, await industryNewsFeed());
   }
   return send(res, 404, { error: "API route not found." });
 }

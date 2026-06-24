@@ -9,9 +9,14 @@ const state = {
   notice: "",
   showLeadForm: false,
   duplicateCandidates: [],
+  placeCandidates: [],
+  placeAssistMessage: "",
   aiOutput: "",
   offlineQueue: JSON.parse(localStorage.getItem("arscrm:offlineQueue") || "[]")
 };
+
+let leadNoteRecorder = null;
+let leadNoteChunks = [];
 
 const ARG_ADD_LEAD_FIELDS = [
   ["companyName", "Company name", "text", true],
@@ -290,6 +295,8 @@ function bindCommon() {
   document.querySelector("[data-close-modal]")?.addEventListener("click", () => {
     state.showLeadForm = false;
     state.duplicateCandidates = [];
+    state.placeCandidates = [];
+    state.placeAssistMessage = "";
     render();
   });
   document.querySelector("#leadForm")?.addEventListener("submit", saveLeadForm);
@@ -354,6 +361,48 @@ function dashboardCards() {
   ]);
 }
 
+function formatNewsDate(value) {
+  if (!value) return "";
+  try { return new Date(value).toLocaleDateString([], { month: "short", day: "numeric" }); }
+  catch { return ""; }
+}
+
+function dashboardNewsStrip() {
+  const feed = state.data.industryNews || { articles: [] };
+  const articles = (feed.articles || []).slice(0, 7);
+  if (!articles.length) return "";
+  return `<section class="industry-news">
+    <div class="panel-head"><div><h2>Industry News Radar</h2><p>Construction, metals, oil & gas, metal fabrication, and EPC signals for today.</p></div><span>${feed.disabled ? "Fallback" : "Live News API"}</span></div>
+    <div class="news-grid">${articles.map(article => `<a class="news-card" href="${article.url || "#"}" target="_blank" rel="noopener">
+      <small>${article.category || article.source || "Industry"} · ${formatNewsDate(article.publishedAt)}</small>
+      <b>${article.title}</b>
+      <span>${article.source || "News API"}</span>
+    </a>`).join("")}</div>
+  </section>`;
+}
+
+function weeklySalesReportPanel() {
+  const report = state.data.weeklyReport;
+  if (!report) return "";
+  const blockerList = report.blockers?.length ? report.blockers.map(item => `<li>${item}</li>`).join("") : "<li>No blockers. Ready for digital sign-off.</li>";
+  return `<article class="panel full weekly-report">
+    <div class="panel-head">
+      <div><h2>Weekly Sales Report Gate</h2><p>Live-data weekly reporting discipline from ARG-IT-SPEC-WSR-001.</p></div>
+      <span class="report-state">${report.state}</span>
+    </div>
+    <div class="report-meter"><strong>${report.completion}% complete</strong><i style="--w:${report.completion}%"></i><span>${report.blockers.length} blockers</span></div>
+    <section class="report-block-grid">
+      <div><b>A · Rep & Week</b><p>${report.rep} · Week ending ${report.weekEnding} · ${report.branch}</p><small>Auto-filled from login. No manual entry.</small></div>
+      <div><b>B · Secured Orders</b><p>${report.securedOrders.length ? report.securedOrders.map(order => `${order.account} ${money(order.value)}`).join(", ") : "No secured orders this week."}</p><small>ERP-owned facts shown as read-only context.</small></div>
+      <div><b>C · Pipeline Confirmation</b><p>${report.pipelineConfirmations.map(item => `${item.account}: ${item.likelihood}`).join(", ") || "No opportunities to confirm."}</p><small>Likelihood, timing, and risk notes confirmed in place.</small></div>
+      <div><b>D · Problematic Accounts</b><p>${report.flaggedAccounts.map(item => item.companyName).join(", ") || "No system flags."}</p><small>Every flagged account needs report-or-dismiss disposition.</small></div>
+      <div><b>E · Market Intelligence Overlay</b><p>Demand: ${report.marketOverlay.demand}; Pricing: ${report.marketOverlay.pricing}; Credit: ${report.marketOverlay.creditClimate}</p><small>Forced-choice scales feed aggregate indices.</small></div>
+      <div><b>F · Completeness & Sign-Off</b><ul>${blockerList}</ul><button disabled>${report.blockers.length ? "Submit locked" : "Ready to sign"}</button></div>
+    </section>
+    ${report.directorQueue ? `<section class="director-queue"><b>Director Review Queue</b><p>Missing reports: ${report.directorQueue.missingReports.join(", ") || "none"}</p><p>Contradictions: ${report.directorQueue.contradictionFlags.join("; ") || "none"}</p></section>` : ""}
+  </article>`;
+}
+
 const pages = {
   dashboard: {
     title: () => state.user?.role === "admin" ? "CRM Admin Dashboard" : "My Sales Dashboard",
@@ -361,12 +410,16 @@ const pages = {
     get action() { return { id: "new-lead", label: "+ New Lead" }; },
     render() {
       const d = state.data.dashboard;
+      const isAdmin = state.user.role === "admin";
+      const salesOverviewCard = `<article class="panel sales-overview ${isAdmin ? "compact-chart" : "wide"}"><h2>${isAdmin ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>↑ 18.6% this month</em></div>${lineChart(d.salesTrend)}</article>`;
+      const pipelineCard = `<article class="panel pipeline ${isAdmin ? "wide" : ""}"><h2>${isAdmin ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${statusMeta(stage.stage).label}</b><strong>${money(stage.value)}</strong><small>${stage.count} accounts</small><button data-route="deals">View Deals</button></div>`).join("")}</div></article>`;
+      const quotaCard = `<article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of $115k</span></div><footer><b>$78,450 achieved</b><span>$36,550 to go</span></footer></article>`;
+      const primaryCards = isAdmin ? `${pipelineCard}${quotaCard}${salesOverviewCard}` : `${salesOverviewCard}${quotaCard}${pipelineCard}`;
       return `
+        ${dashboardNewsStrip()}
         ${dashboardCards()}
         <section class="dashboard-grid">
-          <article class="panel wide"><h2>${state.user.role === "admin" ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>↑ 18.6% this month</em></div>${lineChart(d.salesTrend)}</article>
-          <article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of $115k</span></div><footer><b>$78,450 achieved</b><span>$36,550 to go</span></footer></article>
-          <article class="panel pipeline"><h2>${state.user.role === "admin" ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${statusMeta(stage.stage).label}</b><strong>${money(stage.value)}</strong><small>${stage.count} accounts</small><button data-route="deals">View Deals</button></div>`).join("")}</div></article>
+          ${primaryCards}
           <article class="panel">${table(["Time", "Activity"], d.schedule.map(event => `<tr><td><b>${event.time}</b></td><td>${event.meeting}</td></tr>`))}</article>
           <article class="panel">${table(["Opportunity", "Value", "Stage"], state.data.deals.slice(0, 5).map(deal => `<tr><td><b>${deal.title}</b></td><td>${money(deal.value)}</td><td>${deal.stage}</td></tr>`))}</article>
           <article class="panel">${table(["Task", "Due"], d.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`))}</article>
@@ -454,7 +507,7 @@ const pages = {
         { label: "Due Today", value: 14, delta: "3.1%" },
         { label: "Completed", value: 42, delta: "9.4%" },
         { label: "Overdue", value: 12, delta: "2.3%" }
-      ])}<section class="two-col strong-left"><article class="panel">${table(["Task", "Related To", "Priority", "Due", "Status"], state.data.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.relatedTo}</td><td>${task.priority}</td><td>${task.due}</td><td>${task.status}</td></tr>`))}</article><div class="stack"><article class="panel"><h2>Priority Breakdown</h2>${Object.entries(counts).map(([key, value], index) => `<div class="progress-row"><b>${key}</b><i class="tone-${index}" style="--w:${value * 2}%"></i><span>${value}</span></div>`).join("")}</article><article class="panel">${table(["Reminder", "Time"], state.data.tasks.slice(0, 4).map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`), "No reminders")}</article></div></section>`;
+      ])}${weeklySalesReportPanel()}<section class="two-col strong-left"><article class="panel">${table(["Task", "Related To", "Priority", "Due", "Status"], state.data.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.relatedTo}</td><td>${task.priority}</td><td>${task.due}</td><td>${task.status}</td></tr>`))}</article><div class="stack"><article class="panel"><h2>Priority Breakdown</h2>${Object.entries(counts).map(([key, value], index) => `<div class="progress-row"><b>${key}</b><i class="tone-${index}" style="--w:${value * 2}%"></i><span>${value}</span></div>`).join("")}</article><article class="panel">${table(["Reminder", "Time"], state.data.tasks.slice(0, 4).map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`), "No reminders")}</article></div></section>`;
     }
   },
   calendar: {
@@ -536,6 +589,8 @@ function integrationPanel() {
 async function addLead() {
   state.showLeadForm = true;
   state.duplicateCandidates = [];
+  state.placeCandidates = [];
+  state.placeAssistMessage = "";
   render();
 }
 
@@ -550,11 +605,18 @@ function renderLeadFormModal() {
       <form id="leadForm" class="lead-form-grid">
         ${ARG_ADD_LEAD_FIELDS.map(([name, label, type, required, options]) => {
           const req = required ? "required" : "";
+          if (name === "companyName") return `<label>${label}${required ? " *" : ""}<input id="companyNameInput" name="${name}" type="${type}" ${req}></label>`;
+          if (name === "notes") return `<label class="span-2 ai-note-field"><span>${label}${required ? " *" : ""}</span><div class="note-tools"><button type="button" data-whisper-note>Record Note</button><small>Whisper detects the spoken language and inserts English notes.</small></div><textarea name="${name}" ${req}></textarea></label>`;
           if (type === "textarea") return `<label class="span-2">${label}${required ? " *" : ""}<textarea name="${name}" ${req}></textarea></label>`;
           if (type === "select") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${options.map(option => `<option value="${option}">${option}</option>`).join("")}</select></label>`;
           if (type === "salesman") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${salesmen.map(user => `<option value="${user.id}" ${user.id === state.user.id ? "selected" : ""}>${user.name}</option>`).join("")}</select></label>`;
-          return `<label>${label}${required ? " *" : ""}<input ${name === "companyName" ? "id=\"companyNameInput\"" : ""} name="${name}" type="${type}" ${req}></label>`;
+          return `<label>${label}${required ? " *" : ""}<input name="${name}" type="${type}" ${req}></label>`;
         }).join("")}
+        <div class="lead-ai-assist span-2">
+          <div><b>Google Maps AI assistance</b><p>${state.placeAssistMessage || "Enter a company name, then fetch possible Google Maps matches to auto-fill this form."}</p></div>
+          <button type="button" data-enrich-lead>Fetch company data</button>
+          ${state.placeCandidates.length ? `<div class="place-candidates">${state.placeCandidates.map(place => `<button type="button" data-place-id="${place.place_id}"><b>${place.name}</b><span>${place.formatted_address || place.address || ""}</span><small>${place.rating ? `Rating ${place.rating}` : "Google Maps result"}</small></button>`).join("")}</div>` : ""}
+        </div>
         <div class="duplicate-box span-2">${state.duplicateCandidates.length ? `<b>Possible duplicate found</b>${state.duplicateCandidates.map(item => `<p>${item.companyName} · ${item.owner} · ${Math.round(item.score * 100)}% match</p>`).join("")}` : "Duplicate prevention is active. Type a company name to check existing records."}</div>
         <div class="modal-actions span-2"><button type="button" data-close-modal>Cancel</button><button class="primary" type="submit">Save Lead</button></div>
       </form>
@@ -583,6 +645,111 @@ async function checkDuplicateLead(event) {
   }
 }
 
+function currentLeadFormValues() {
+  const form = document.querySelector("#leadForm");
+  return form ? Object.fromEntries(new FormData(form).entries()) : {};
+}
+
+function restoreLeadFormValues(values) {
+  Object.entries(values).forEach(([key, value]) => {
+    const field = document.querySelector(`[name="${key}"]`);
+    if (field) field.value = value;
+  });
+}
+
+function fillLeadForm(fields = {}) {
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    const field = document.querySelector(`[name="${key}"]`);
+    if (!field) return;
+    if (key === "notes" && field.value.trim()) field.value = `${field.value.trim()}\n${value}`;
+    else field.value = value;
+  });
+}
+
+async function enrichLeadFromPlaces() {
+  const values = currentLeadFormValues();
+  if (!values.companyName?.trim()) {
+    state.placeAssistMessage = "Enter a company name first.";
+    render();
+    restoreLeadFormValues(values);
+    return;
+  }
+  const result = await api("/api/integrations/places/candidates", { method: "POST", body: JSON.stringify(values) });
+  if (result.fields) {
+    fillLeadForm(result.fields);
+    state.placeCandidates = [];
+    state.placeAssistMessage = `${result.disabled ? "Fallback" : "Google Maps"} match applied.`;
+    render();
+    restoreLeadFormValues({ ...values, ...result.fields });
+    return;
+  }
+  state.placeCandidates = result.results || [];
+  state.placeAssistMessage = state.placeCandidates.length > 1
+    ? "Multiple companies matched. Choose the correct Google Maps result."
+    : state.placeCandidates.length ? "One company matched. Select it to fill the form." : "No Google Maps matches found.";
+  render();
+  restoreLeadFormValues(values);
+}
+
+async function choosePlace(placeId) {
+  const values = currentLeadFormValues();
+  const result = await api("/api/integrations/places/details", { method: "POST", body: JSON.stringify({ placeId }) });
+  state.placeCandidates = [];
+  state.placeAssistMessage = `${result.disabled ? "Fallback" : "Google Maps"} company details applied.`;
+  render();
+  restoreLeadFormValues({ ...values, ...result.fields });
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function toggleWhisperNote(button) {
+  const notes = document.querySelector(`[name="notes"]`);
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    state.notice = "Audio recording is not supported in this browser.";
+    render();
+    return;
+  }
+  if (leadNoteRecorder?.state === "recording") {
+    leadNoteRecorder.stop();
+    button.textContent = "Transcribing...";
+    button.disabled = true;
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  leadNoteChunks = [];
+  leadNoteRecorder = new MediaRecorder(stream);
+  leadNoteRecorder.ondataavailable = event => {
+    if (event.data.size) leadNoteChunks.push(event.data);
+  };
+  leadNoteRecorder.onstop = async () => {
+    try {
+      const values = currentLeadFormValues();
+      stream.getTracks().forEach(track => track.stop());
+      const blob = new Blob(leadNoteChunks, { type: leadNoteRecorder.mimeType || "audio/webm" });
+      const audioBase64 = await blobToBase64(blob);
+      const result = await api("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ audioBase64, mimeType: blob.type, fileName: "lead-note.webm" }) });
+      const mergedNotes = `${values.notes?.trim() ? `${values.notes.trim()}\n` : ""}${result.transcript}`.trim();
+      if (notes) notes.value = mergedNotes;
+      state.notice = `${result.disabled ? "Fallback" : "Whisper"}: ${result.summary}`;
+      render();
+      restoreLeadFormValues({ ...values, notes: mergedNotes });
+    } catch (error) {
+      state.notice = error.message || "Whisper transcription failed.";
+      render();
+    }
+  };
+  leadNoteRecorder.start();
+  button.textContent = "Stop recording";
+}
+
 async function saveLeadForm(event) {
   event.preventDefault();
   const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
@@ -590,6 +757,8 @@ async function saveLeadForm(event) {
     const result = await api("/api/leads", { method: "POST", body: JSON.stringify(payload) });
     state.showLeadForm = false;
     state.duplicateCandidates = [];
+    state.placeCandidates = [];
+    state.placeAssistMessage = "";
     state.notice = `${result.lead.companyName} saved as ${result.lead.companyId}.`;
     await bootstrap();
     state.selectedLeadId = result.lead.id;
@@ -652,6 +821,11 @@ document.addEventListener("click", async event => {
     const result = await api("/api/integrations/places/search?q=steel fabricators UAE");
     el("#integrationOutput").innerHTML = `<b>${result.disabled ? "Fallback" : "Live"} Google Places</b>${result.results.map(place => `<p>${place.name || place.formatted_address} · ${place.address || place.formatted_address || ""}</p>`).join("")}`;
   }
+  const placePick = event.target.closest("[data-place-id]");
+  if (placePick) await choosePlace(placePick.dataset.placeId);
+  if (event.target.closest("[data-enrich-lead]")) await enrichLeadFromPlaces();
+  const whisperButton = event.target.closest("[data-whisper-note]");
+  if (whisperButton) await toggleWhisperNote(whisperButton);
   if (event.target.closest("[data-market-refresh]")) {
     const result = await api("/api/market-intelligence");
     const output = el("#integrationOutput");

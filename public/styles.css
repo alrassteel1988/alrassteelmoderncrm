@@ -362,7 +362,17 @@ button { cursor: pointer; }
 .pipeline-row b { color: var(--green); }
 .pipeline-row .proposal { color: var(--orange); }
 .pipeline-row .won { color: var(--green); }
-.pipeline-row strong { display: block; font-size: clamp(19px, 1.55vw, 22px); margin: 18px 0 4px; }
+.pipeline-row strong {
+  display: block;
+  width: 100%;
+  margin: 18px 0 4px;
+  font-size: clamp(17px, 1.18vw, 20px);
+  line-height: 1.15;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
 .pipeline-row button { border: 0; color: var(--green); background: transparent; font-weight: 900; padding: 14px 0 0; text-align: left; }
 
 .table-wrap { overflow-x: auto; }

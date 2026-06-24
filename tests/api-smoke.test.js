@@ -129,11 +129,13 @@ function auth(token) {
         estimatedValue: 12600,
         nextActionType: "To Call",
         scopeOfAction: "Share Quotation",
+        productInterest: "Beams, MS Angles, Steel Plates",
         nextAction: "Call procurement"
       })
     });
     assert.equal(created.response.status, 201);
     assert.equal(created.body.lead.ownerId, salesmanCreate.body.user.id);
+    assert.equal(created.body.lead.productInterest, "Beams, MS Angles, Steel Plates");
 
     const salesmanBootstrap = await request("/api/bootstrap", { headers: auth(salesmanLogin.body.token) });
     assert.equal(salesmanBootstrap.response.status, 200);

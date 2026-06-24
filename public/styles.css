@@ -1247,6 +1247,45 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
 }
 .lead-form-grid textarea, .mini-form textarea { min-height: 76px; resize: vertical; }
 .span-2 { grid-column: span 2; }
+.product-interest-field {
+  grid-column: span 2;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(248, 250, 255, .8);
+  padding: 12px;
+}
+.product-interest-field legend {
+  padding: 0 6px;
+  color: #151a23;
+  font-family: var(--font-main);
+  font-size: 12px;
+  font-weight: 700;
+}
+.product-interest-field > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 12px;
+}
+.product-interest-field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+}
+.product-interest-field input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
+  accent-color: var(--green);
+}
 .duplicate-box {
   background: #f8faff;
   border: 1px dashed #b8c8e8;
@@ -1459,6 +1498,8 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   .news-card { min-height: 0; }
   .lead-form-grid, .ai-actions, .mini-form { grid-template-columns: 1fr; }
   .lead-ai-assist { grid-template-columns: 1fr; }
+  .product-interest-field, .product-interest-field > div { grid-column: auto; }
+  .product-interest-field > div { grid-template-columns: 1fr; }
   .section-head, .contact-person-card { display: grid; grid-template-columns: 1fr; }
   .contact-actions { justify-content: flex-start; }
   .note-tools { align-items: flex-start; flex-direction: column; }

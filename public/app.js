@@ -22,6 +22,21 @@ const state = {
 let leadNoteRecorder = null;
 let leadNoteChunks = [];
 
+const STEEL_PRODUCT_OPTIONS = [
+  "Beams",
+  "European sections",
+  "Steel Plates",
+  "UPN/Channels",
+  "MS Sheets",
+  "Hollow Sections",
+  "Pipes",
+  "GI Coils",
+  "Steel Bars",
+  "GI Gratings",
+  "PPGI Coils",
+  "MS Angles"
+];
+
 const ARG_ADD_LEAD_FIELDS = [
   ["companyName", "Company name", "text", true],
   ["legalName", "Legal name", "text"],
@@ -942,6 +957,7 @@ function renderLeadFormModal() {
         ${ARG_ADD_LEAD_FIELDS.map(([name, label, type, required, options]) => {
           const req = required ? "required" : "";
           if (name === "companyName") return `<label>${label}${required ? " *" : ""}<input id="companyNameInput" name="${name}" type="${type}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></label>`;
+          if (name === "productInterest") return `<fieldset class="span-2 product-interest-field"><legend>${label}${required ? " *" : ""}</legend><div>${STEEL_PRODUCT_OPTIONS.map(product => `<label><input type="checkbox" name="${name}" value="${product}" autocomplete="off"> <span>${product}</span></label>`).join("")}</div></fieldset>`;
           if (name === "notes") return `<label class="span-2 ai-note-field"><span>${label}${required ? " *" : ""}</span><div class="note-tools"><button type="button" data-whisper-note>Record Note</button><small>Whisper detects the spoken language and inserts English notes.</small></div><textarea name="${name}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></textarea></label>`;
           if (type === "textarea") return `<label class="span-2">${label}${required ? " *" : ""}<textarea name="${name}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></textarea></label>`;
           if (type === "select") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${options.map(option => `<option value="${option}">${option}</option>`).join("")}</select></label>`;
@@ -978,11 +994,22 @@ async function checkDuplicateLead(event) {
 
 function currentLeadFormValues() {
   const form = document.querySelector("#leadForm");
-  return form ? Object.fromEntries(new FormData(form).entries()) : {};
+  if (!form) return {};
+  const data = new FormData(form);
+  const values = Object.fromEntries(data.entries());
+  values.productInterest = data.getAll("productInterest").join(", ");
+  return values;
 }
 
 function restoreLeadFormValues(values) {
   Object.entries(values).forEach(([key, value]) => {
+    if (key === "productInterest") {
+      const selectedProducts = String(value || "").split(",").map(item => item.trim()).filter(Boolean);
+      document.querySelectorAll(`[name="productInterest"]`).forEach(field => {
+        field.checked = selectedProducts.includes(field.value);
+      });
+      return;
+    }
     const field = document.querySelector(`[name="${key}"]`);
     if (field) field.value = value;
   });
@@ -991,6 +1018,13 @@ function restoreLeadFormValues(values) {
 function fillLeadForm(fields = {}) {
   Object.entries(fields).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
+    if (key === "productInterest") {
+      const selectedProducts = String(value).split(",").map(item => item.trim().toLowerCase()).filter(Boolean);
+      document.querySelectorAll(`[name="productInterest"]`).forEach(field => {
+        field.checked = selectedProducts.some(product => product === field.value.toLowerCase() || field.value.toLowerCase().includes(product) || product.includes(field.value.toLowerCase()));
+      });
+      return;
+    }
     const field = document.querySelector(`[name="${key}"]`);
     if (!field) return;
     if (key === "notes" && field.value.trim()) field.value = `${field.value.trim()}\n${value}`;
@@ -1083,7 +1117,9 @@ async function toggleWhisperNote(button) {
 
 async function saveLeadForm(event) {
   event.preventDefault();
-  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const data = new FormData(event.currentTarget);
+  const payload = Object.fromEntries(data.entries());
+  payload.productInterest = data.getAll("productInterest").join(", ");
   try {
     const result = await api("/api/leads", { method: "POST", body: JSON.stringify(payload) });
     state.showLeadForm = false;

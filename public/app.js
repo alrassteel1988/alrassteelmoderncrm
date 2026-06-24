@@ -6,6 +6,7 @@ const state = {
   selectedLeadId: null,
   selectedMessageId: "m1",
   calendarMonth: localStorage.getItem("arscrm:calendarMonth") || "2026-06-01",
+  leadFilters: { ownerId: "", location: "", sector: "" },
   search: "",
   notice: "",
   showLeadForm: false,
@@ -140,12 +141,18 @@ function latestLeadActivity(lead) {
     .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))[0] || null;
 }
 
-function leadTable(leads, selectedId) {
+function leadCreatedTime(lead) {
+  const date = lead.created ? new Date(lead.created) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+}
+
+function leadTable(leads, selectedId, { showSalesman = false } = {}) {
   const headings = [
     "DATE CREATED",
     "COMPANY NAME OF LEAD",
     "CONTACT PERSON",
     "CONTACT NUMBER",
+    ...(showSalesman ? ["SALESMAN"] : []),
     "SECTOR",
     "LOCATION",
     "LAST ACTIVITY DATE",
@@ -160,6 +167,7 @@ function leadTable(leads, selectedId) {
       <td class="company-cell"><button class="lead-link" data-open-lead="${lead.id}">${displayValue(lead.companyName || lead.company)}</button></td>
       <td>${displayValue(lead.contactPerson || lead.name)}</td>
       <td>${displayValue(lead.phone)}</td>
+      ${showSalesman ? `<td>${displayValue(ownerName(lead.ownerId))}</td>` : ""}
       <td>${displayValue(lead.sector)}</td>
       <td>${displayValue(lead.location || lead.territory || lead.countryEmirate)}</td>
       <td>${displayDate(activity?.at || lead.lastActivityDate)}</td>
@@ -343,6 +351,32 @@ function filtered(items, fields) {
   return items.filter(item => fields.some(field => String(item[field] || "").toLowerCase().includes(q)));
 }
 
+function uniqueLeadValues(leads, getter) {
+  return [...new Set(leads.map(getter).map(value => String(value || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function adminLeadFilters(leads) {
+  if (state.user?.role !== "admin") return "";
+  const salesmen = (state.data.users || []).filter(user => user.role !== "admin");
+  const locations = uniqueLeadValues(leads, lead => lead.location || lead.territory || lead.countryEmirate);
+  const sectors = uniqueLeadValues(leads, lead => lead.sector);
+  return `<div class="lead-filter-bar">
+    <label>Salesman<select data-lead-filter="ownerId"><option value="">All salesmen</option>${salesmen.map(user => `<option value="${user.id}" ${state.leadFilters.ownerId === user.id ? "selected" : ""}>${user.name}</option>`).join("")}</select></label>
+    <label>Location<select data-lead-filter="location"><option value="">All locations</option>${locations.map(location => `<option value="${location}" ${state.leadFilters.location === location ? "selected" : ""}>${location}</option>`).join("")}</select></label>
+    <label>Sector<select data-lead-filter="sector"><option value="">All sectors</option>${sectors.map(sector => `<option value="${sector}" ${state.leadFilters.sector === sector ? "selected" : ""}>${sector}</option>`).join("")}</select></label>
+  </div>`;
+}
+
+function applyAdminLeadFilters(leads) {
+  if (state.user?.role !== "admin") return leads;
+  return leads.filter(lead => {
+    const location = lead.location || lead.territory || lead.countryEmirate || "";
+    return (!state.leadFilters.ownerId || lead.ownerId === state.leadFilters.ownerId)
+      && (!state.leadFilters.location || location === state.leadFilters.location)
+      && (!state.leadFilters.sector || lead.sector === state.leadFilters.sector);
+  });
+}
+
 function renderLogin(error = "") {
   document.body.className = "login-body";
   el("#app").innerHTML = `
@@ -461,6 +495,10 @@ function bindCommon() {
   document.querySelector("#activityForm")?.addEventListener("submit", saveActivity);
   document.querySelector("#pmrForm")?.addEventListener("submit", savePmr);
   document.querySelector("#salesmanForm")?.addEventListener("submit", saveSalesmanForm);
+  document.querySelectorAll("[data-lead-filter]").forEach(select => select.addEventListener("change", event => {
+    state.leadFilters[event.currentTarget.dataset.leadFilter] = event.currentTarget.value;
+    render();
+  }));
   document.querySelector("[data-action='logout']")?.addEventListener("click", () => {
     localStorage.clear();
     location.reload();
@@ -667,11 +705,13 @@ const pages = {
     subtitle: "Manage assigned leads, filter by status, and open a full customer activity profile.",
     action: { id: "new-lead", label: "+ Add Lead" },
     render() {
-      const leads = filtered(state.data.leads, ["name", "company", "companyName", "contactPerson", "phone", "sector", "location", "territory", "countryEmirate", "status", "source", "nextAction"]);
+      const searchedLeads = filtered(state.data.leads, ["name", "company", "companyName", "contactPerson", "phone", "sector", "location", "territory", "countryEmirate", "status", "source", "nextAction"]);
+      const leads = applyAdminLeadFilters(searchedLeads).slice().sort((a, b) => leadCreatedTime(b) - leadCreatedTime(a));
       return `<section class="lead-table-page">
         <article class="panel leads-list">
           <div class="panel-head"><h2>Leads List</h2><button>View All</button></div>
-          ${leadTable(leads, state.showLeadDetails ? state.selectedLeadId : null)}
+          ${adminLeadFilters(searchedLeads)}
+          ${leadTable(leads, state.showLeadDetails ? state.selectedLeadId : null, { showSalesman: state.user.role === "admin" })}
         </article>
       </section>`;
     },

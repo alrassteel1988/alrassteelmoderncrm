@@ -439,6 +439,40 @@ tbody tr { cursor: default; }
   border-collapse: separate;
   border-spacing: 0;
 }
+.lead-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 14px;
+  background: rgba(248, 250, 255, .72);
+}
+.lead-filter-bar label {
+  display: grid;
+  gap: 7px;
+  color: #344256;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.lead-filter-bar select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: #172033;
+  padding: 10px 12px;
+  font-family: var(--font-main);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+}
+.lead-filter-bar + .lead-table-wrap .leads-table {
+  min-width: 1320px;
+}
 .leads-table th {
   padding: 14px 14px;
   background: rgba(244, 248, 251, .92);
@@ -1339,6 +1373,7 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   .kpi-grid, .pipeline-row, .kanban, .calendar .weekdays, .calendar .days, .followups .bucket-grid, .integration-grid, .mini-kpis { grid-template-columns: 1fr; }
   .news-grid, .report-block-grid, .report-meter { grid-template-columns: 1fr; }
   .approval-list section, .user-create-form div { grid-template-columns: 1fr; }
+  .lead-filter-bar { grid-template-columns: 1fr; }
   .calendar-head { align-items: stretch; flex-direction: column; }
   .calendar-head button { width: 100%; }
   .news-card { min-height: 0; }

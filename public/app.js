@@ -6,8 +6,61 @@ const state = {
   selectedLeadId: null,
   selectedMessageId: "m1",
   search: "",
-  notice: ""
+  notice: "",
+  showLeadForm: false,
+  duplicateCandidates: [],
+  aiOutput: "",
+  offlineQueue: JSON.parse(localStorage.getItem("arscrm:offlineQueue") || "[]")
 };
+
+const ARG_ADD_LEAD_FIELDS = [
+  ["companyName", "Company name", "text", true],
+  ["legalName", "Legal name", "text"],
+  ["yearEstablished", "Year established", "number"],
+  ["countryEmirate", "Country / Emirate", "text"],
+  ["sector", "Sector", "select", true, ["Fabricator", "Contractor", "Trader", "Marine", "Piling", "Oil & Gas", "Trailer", "PEB", "Other"]],
+  ["tier", "Tier", "select", true, ["1", "2", "3"]],
+  ["industry", "Industry", "text"],
+  ["location", "Location", "text"],
+  ["address", "Address", "textarea"],
+  ["contactPerson", "Contact person", "text"],
+  ["primaryTitle", "Primary title", "text"],
+  ["phone", "Phone", "tel"],
+  ["email", "Email", "email"],
+  ["secondaryContact", "Secondary contact", "text"],
+  ["secondaryTitle", "Secondary title", "text"],
+  ["secondaryMobile", "Secondary mobile", "tel"],
+  ["secondaryEmail", "Secondary email", "email"],
+  ["website", "Website", "url"],
+  ["googleMapsUrl", "Google Maps URL", "url"],
+  ["businessCategory", "Business category", "text"],
+  ["territory", "Territory", "select", true, ["UAE-North", "UAE-South", "Saudi", "Kuwait", "Bahrain", "Oman", "Mixed"]],
+  ["ownerId", "Assigned salesman", "salesman", true],
+  ["stage", "Stage", "select", true, ["PROSPECT", "OUTREACH", "ENGAGED", "SAMPLING", "ACTIVE", "DORMANT"]],
+  ["priority", "Priority", "select", false, ["High", "Medium", "Low"]],
+  ["estimatedValue", "Estimated value", "number"],
+  ["nextActionDate", "Next action date", "date"],
+  ["firstOrderDate", "First order date", "date"],
+  ["estimatedMonthlyVolume", "Est. monthly volume", "text"],
+  ["productInterest", "Product interest", "text"],
+  ["tags", "Tags", "text"],
+  ["quotationRef", "Quotation ref", "text"],
+  ["productRemarks", "Products/services remarks", "textarea"],
+  ["nextAction", "Next action", "textarea"],
+  ["notes", "Notes", "textarea"]
+];
+
+const AI_ACTIONS = [
+  ["prepare", "Prepare Me For This Meeting"],
+  ["next", "What Should I Do Next?"],
+  ["email", "Draft Follow-Up Email"],
+  ["summary", "Summarise This Relationship"],
+  ["attention", "Flag As Needs Attention"],
+  ["today", "What Should I Focus On Today?"],
+  ["neglected", "Who Have I Neglected?"],
+  ["intel", "Any New Intel On My Prospects?"],
+  ["coaching", "Who Needs Coaching?"]
+];
 
 const bootParams = new URLSearchParams(location.search);
 if (bootParams.get("view")) {
@@ -121,6 +174,7 @@ function render() {
         ${page.render()}
       </main>
     </div>
+    ${state.showLeadForm ? renderLeadFormModal() : ""}
   `;
   bindCommon();
   page.bind?.();
@@ -171,10 +225,28 @@ function bindCommon() {
   });
   document.querySelector("[data-ai-demo]")?.addEventListener("click", runAiDemo);
   document.querySelector("[data-action='new-lead']")?.addEventListener("click", addLead);
+  document.querySelector("[data-close-modal]")?.addEventListener("click", () => {
+    state.showLeadForm = false;
+    state.duplicateCandidates = [];
+    render();
+  });
+  document.querySelector("#leadForm")?.addEventListener("submit", saveLeadForm);
+  document.querySelector("#companyNameInput")?.addEventListener("input", debounce(checkDuplicateLead, 300));
+  document.querySelectorAll("[data-ai-action]").forEach(button => button.addEventListener("click", () => runRelationshipAction(button.dataset.aiAction)));
+  document.querySelector("#activityForm")?.addEventListener("submit", saveActivity);
+  document.querySelector("#pmrForm")?.addEventListener("submit", savePmr);
   document.querySelector("[data-action='logout']")?.addEventListener("click", () => {
     localStorage.clear();
     location.reload();
   });
+}
+
+function debounce(fn, wait) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
 }
 
 function kpiCards(cards) {
@@ -255,11 +327,17 @@ const pages = {
           ${table(["Lead", "Company", "Status", "Score", "Owner"], leads.map(lead => `<tr class="${selected?.id === lead.id ? "selected" : ""}" data-lead-id="${lead.id}"><td><b>${lead.name}</b></td><td>${lead.company}</td><td>${lead.status}</td><td>${lead.score}</td><td>${ownerName(lead.ownerId)}</td></tr>`))}
         </article>
         <article class="panel profile-card">
-          ${selected ? `<div class="profile-hero"><span class="big-avatar"></span><div><h2>${selected.name}</h2><p>${selected.company} · ${selected.sector}</p><mark>${selected.status}</mark></div></div>
+          ${selected ? `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} · ${selected.sector} · ${selected.territory}</p><mark>${selected.status}</mark></div></div>
           <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>More</button></div>
-          <dl>${[["Email", selected.email], ["Phone", selected.phone], ["Company", selected.company], ["Website", selected.website], ["Lead Source", selected.source], ["Created", selected.created], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`).join("")}</dl>
-          <div class="score"><span>Lead Score</span><strong>${selected.score}/100</strong><i style="width:${selected.score}%"></i></div>
-          <h3>Recent Activity</h3><ul>${selected.notes.map(note => `<li>${note}</li>`).join("")}</ul>` : ""}
+          <dl>${[["Primary Contact", selected.contactPerson], ["Title", selected.primaryTitle], ["Email", selected.email], ["Phone", selected.phone], ["Legal Name", selected.legalName], ["Country / Emirate", selected.countryEmirate], ["Tier", selected.tier], ["Website", selected.website], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${value || "—"}</dd>`).join("")}</dl>
+          <div class="score"><span>Relationship Health</span><strong>${selected.relationshipHealth} · ${selected.healthScore}/100</strong><i style="width:${selected.healthScore}%"></i><p>${selected.healthReason}</p></div>
+          <section class="ai-actions">${AI_ACTIONS.slice(0, state.user.role === "admin" ? 9 : 8).map(([id, label]) => `<button data-ai-action="${id}">${label}</button>`).join("")}</section>
+          ${state.aiOutput ? `<div class="ai-output">${state.aiOutput.replace(/\n/g, "<br>")}</div>` : ""}
+          <h3>Append-Only Activity</h3>
+          <form id="activityForm" class="mini-form"><select name="type">${["Phone Call", "Email", "In-Person Meeting", "Site Visit", "Video Call", "Quotation Sent", "Order Placed"].map(type => `<option>${type}</option>`).join("")}</select><input name="quotationRef" placeholder="Quotation ref"><textarea name="notes" placeholder="Activity notes" required></textarea><button>Log Activity</button></form>
+          <h3>Structured PMR</h3>
+          <form id="pmrForm" class="mini-form"><input name="meetingDate" type="date" required><input name="productsDiscussed" placeholder="Products discussed"><input name="competitorsMentioned" placeholder="Competitors mentioned"><input name="complianceRequirements" placeholder="ISO, ICV, DNV..."><select name="relationshipHeatScore">${[1,2,3,4,5].map(n => `<option>${n}</option>`).join("")}</select><select name="directorActionRequired">${["None", "Awareness only", "Attend next visit", "Direct contact"].map(x => `<option>${x}</option>`).join("")}</select><textarea name="notes" placeholder="PMR notes"></textarea><button>Save PMR</button></form>
+          <h3>Recent Activity</h3><ul>${(state.data.activities || []).filter(activity => activity.companyId === selected.companyId).slice(0, 5).map(activity => `<li>${activity.type}: ${activity.notes}</li>`).join("") || "<li>No activity yet.</li>"}</ul>` : ""}
         </article>
       </section>`;
     },
@@ -365,7 +443,7 @@ const pages = {
         { label: "Roles", value: 4, delta: "0.0%" },
         { label: "Automations", value: 12, delta: "7.5%" },
         { label: "Integrations", value: 6, delta: "2.8%" }
-      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage admin, manager, and salesman access permissions.</p>${table(["User", "Role", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.title || user.role}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can delete contacts", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}`;
+      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage director and salesman access permissions by territory.</p>${table(["User", "Role", "Territory", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.title || user.role}</td><td>${user.territory || "Mixed"}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can delete contacts", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}${state.data.configAudit?.length ? `<article class="panel full">${table(["Change", "Parameter", "Previous", "New", "Confirmed"], state.data.configAudit.map(change => `<tr><td><b>${change.change_id}</b></td><td>${change.parameter_changed}</td><td>${change.previous_value}</td><td>${change.new_value}</td><td>${change.confirmation_given ? "Yes" : "No"}</td></tr>`))}</article>` : ""}`;
     }
   }
 };
@@ -381,18 +459,102 @@ function portfolioSection() {
 }
 
 function integrationPanel() {
-  return `<article class="panel full integration-panel"><h2>AI & Data Integrations</h2><div class="integration-grid"><button data-ai-demo>Whisper AI Voice Note</button><button data-places-demo>Google Places Prospecting</button><button data-market-refresh>Market Intelligence Feed</button></div><div id="integrationOutput" class="integration-output">Use the integration controls to preview live or fallback CRM intelligence.</div></article>`;
+  return `<article class="panel full integration-panel"><h2>AI & Data Integrations</h2><div class="integration-grid"><button data-ai-demo>Whisper AI Voice Note</button><button data-places-demo>Google Places Prospecting</button><button data-market-refresh>Market Intelligence Feed</button><button data-config-preview>Configuration Impact Preview</button></div><div id="integrationOutput" class="integration-output">Use the integration controls to preview live or fallback CRM intelligence.</div></article>`;
 }
 
 async function addLead() {
-  const name = prompt("Lead contact name", "New Steel Buyer");
-  if (!name) return;
-  const company = prompt("Company", "Dubai Steel Fabricators");
-  const result = await api("/api/leads", { method: "POST", body: JSON.stringify({ name, company, source: "Manual", value: 9000 }) });
-  state.data.leads.unshift(result.lead);
-  state.notice = `${result.lead.company} added to the CRM.`;
-  state.selectedLeadId = result.lead.id;
-  setRoute("leads");
+  state.showLeadForm = true;
+  state.duplicateCandidates = [];
+  render();
+}
+
+function renderLeadFormModal() {
+  const salesmen = (state.data.users?.length ? state.data.users : [state.user]).filter(user => user.role !== "admin");
+  return `<div class="modal-backdrop">
+    <section class="modal lead-modal">
+      <div class="modal-head">
+        <div><h2>Add New Lead</h2><p>Create once. Salespeople can access it from web or mobile.</p></div>
+        <button data-close-modal title="Close">×</button>
+      </div>
+      <form id="leadForm" class="lead-form-grid">
+        ${ARG_ADD_LEAD_FIELDS.map(([name, label, type, required, options]) => {
+          const req = required ? "required" : "";
+          if (type === "textarea") return `<label class="span-2">${label}${required ? " *" : ""}<textarea name="${name}" ${req}></textarea></label>`;
+          if (type === "select") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${options.map(option => `<option value="${option}">${option}</option>`).join("")}</select></label>`;
+          if (type === "salesman") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${salesmen.map(user => `<option value="${user.id}" ${user.id === state.user.id ? "selected" : ""}>${user.name}</option>`).join("")}</select></label>`;
+          return `<label>${label}${required ? " *" : ""}<input ${name === "companyName" ? "id=\"companyNameInput\"" : ""} name="${name}" type="${type}" ${req}></label>`;
+        }).join("")}
+        <div class="duplicate-box span-2">${state.duplicateCandidates.length ? `<b>Possible duplicate found</b>${state.duplicateCandidates.map(item => `<p>${item.companyName} · ${item.owner} · ${Math.round(item.score * 100)}% match</p>`).join("")}` : "Duplicate prevention is active. Type a company name to check existing records."}</div>
+        <div class="modal-actions span-2"><button type="button" data-close-modal>Cancel</button><button class="primary" type="submit">Save Lead</button></div>
+      </form>
+    </section>
+  </div>`;
+}
+
+async function checkDuplicateLead(event) {
+  const companyName = event.target.value.trim();
+  if (companyName.length < 3) {
+    state.duplicateCandidates = [];
+    render();
+    return;
+  }
+  try {
+    const result = await api("/api/leads/check-duplicate", { method: "POST", body: JSON.stringify({ companyName }) });
+    state.duplicateCandidates = result.candidates || [];
+    const formValues = new FormData(document.querySelector("#leadForm"));
+    render();
+    Object.entries(Object.fromEntries(formValues.entries())).forEach(([key, value]) => {
+      const field = document.querySelector(`[name="${key}"]`);
+      if (field) field.value = value;
+    });
+  } catch {
+    state.duplicateCandidates = [];
+  }
+}
+
+async function saveLeadForm(event) {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  try {
+    const result = await api("/api/leads", { method: "POST", body: JSON.stringify(payload) });
+    state.showLeadForm = false;
+    state.duplicateCandidates = [];
+    state.notice = `${result.lead.companyName} saved as ${result.lead.companyId}.`;
+    await bootstrap();
+    state.selectedLeadId = result.lead.id;
+    setRoute("leads");
+  } catch (error) {
+    state.offlineQueue.push({ type: "lead", payload, queuedAt: new Date().toISOString() });
+    localStorage.setItem("arscrm:offlineQueue", JSON.stringify(state.offlineQueue));
+    state.showLeadForm = false;
+    state.notice = `Saved locally for sync when back online: ${payload.companyName}.`;
+    render();
+  }
+}
+
+async function runRelationshipAction(action) {
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId) || state.data.leads[0];
+  const result = await api("/api/ai/actions", { method: "POST", body: JSON.stringify({ action, companyId: lead?.companyId }) });
+  state.aiOutput = result.output;
+  render();
+}
+
+async function saveActivity(event) {
+  event.preventDefault();
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId) || state.data.leads[0];
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await api("/api/activities", { method: "POST", body: JSON.stringify({ ...payload, companyId: lead.companyId }) });
+  state.notice = "Activity logged append-only.";
+  await bootstrap();
+}
+
+async function savePmr(event) {
+  event.preventDefault();
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId) || state.data.leads[0];
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  await api("/api/pmrs", { method: "POST", body: JSON.stringify({ ...payload, companyId: lead.companyId }) });
+  state.notice = "Structured PMR saved and linked to the activity log.";
+  await bootstrap();
 }
 
 async function runAiDemo() {
@@ -424,6 +586,11 @@ document.addEventListener("click", async event => {
     const output = el("#integrationOutput");
     if (output) output.innerHTML = `<b>${result.disabled ? "Fallback" : "Live"} Market Intelligence</b>${result.items.map(item => `<p>${item.title}</p>`).join("")}`;
     state.notice = `${result.items.length} market intelligence items loaded.`;
+  }
+  if (event.target.closest("[data-config-preview]")) {
+    const result = await api("/api/config/preview", { method: "POST", body: JSON.stringify({ input: "Reduce Tier 1 follow-up threshold to 10 days" }) });
+    const output = el("#integrationOutput");
+    if (output) output.innerHTML = `<b>Retrospective Impact Preview</b><p>${result.preview}</p><p><strong>Confirmation required before write.</strong></p>`;
   }
 });
 

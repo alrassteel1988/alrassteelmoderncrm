@@ -49,6 +49,44 @@ async function request(path, options) {
     assert.equal(whisper.response.status, 200);
     assert.ok(whisper.body.transcript);
 
+    const duplicate = await request("/api/leads/check-duplicate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
+      body: JSON.stringify({ companyName: "Apex Industries" })
+    });
+    assert.equal(duplicate.response.status, 200);
+    assert.ok(Array.isArray(duplicate.body.candidates));
+
+    const created = await request("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
+      body: JSON.stringify({
+        companyName: "Smoke Test Steel",
+        sector: "Fabricator",
+        tier: "1",
+        territory: "UAE-South",
+        stage: "PROSPECT",
+        nextAction: "Call procurement"
+      })
+    });
+    assert.equal(created.response.status, 201);
+    assert.ok(created.body.lead.companyId);
+
+    const activity = await request("/api/activities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
+      body: JSON.stringify({ companyId: created.body.lead.companyId, type: "Phone Call", notes: "Smoke activity" })
+    });
+    assert.equal(activity.response.status, 201);
+
+    const ai = await request("/api/ai/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
+      body: JSON.stringify({ companyId: created.body.lead.companyId, action: "prepare" })
+    });
+    assert.equal(ai.response.status, 200);
+    assert.ok(ai.body.output);
+
     console.log("api-smoke ok");
   } finally {
     child.kill();

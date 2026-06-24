@@ -345,6 +345,122 @@ dd { margin: 0; font-weight: 900; }
   font-weight: 900;
 }
 .integration-output { margin-top: 18px; padding: 18px; border-radius: 12px; background: #f8faff; color: var(--muted); }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(9, 15, 36, 0.48);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.modal {
+  width: min(1040px, 100%);
+  max-height: min(88vh, 920px);
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(9, 15, 36, 0.28);
+  padding: 24px;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.modal-head h2 { margin: 0 0 5px; }
+.modal-head p { margin: 0; color: var(--muted); }
+.modal-head button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  background: #f8faff;
+  border-radius: 10px;
+  font-size: 24px;
+  line-height: 1;
+}
+.lead-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.lead-form-grid label, .mini-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.lead-form-grid input, .lead-form-grid select, .lead-form-grid textarea,
+.mini-form input, .mini-form select, .mini-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8faff;
+  color: var(--ink);
+  padding: 10px 12px;
+  min-height: 42px;
+}
+.lead-form-grid textarea, .mini-form textarea { min-height: 76px; resize: vertical; }
+.span-2 { grid-column: span 2; }
+.duplicate-box {
+  background: #f8faff;
+  border: 1px dashed #b8c8e8;
+  border-radius: 12px;
+  color: var(--muted);
+  padding: 14px;
+  font-size: 13px;
+}
+.duplicate-box b { display: block; color: var(--orange); margin-bottom: 8px; }
+.duplicate-box p { margin: 5px 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.modal-actions button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8faff;
+  padding: 11px 18px;
+  font-weight: 900;
+}
+.modal-actions .primary { border: 0; background: linear-gradient(110deg, var(--violet), var(--blue)); }
+.health-green { background: linear-gradient(135deg, #23b45a, #23c7b8); }
+.health-amber { background: linear-gradient(135deg, #ffb020, #6740f5); }
+.health-red { background: linear-gradient(135deg, #eb4265, #ff7a1a); }
+.ai-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 0 0 22px;
+}
+.ai-actions button, .mini-form button {
+  border: 1px solid var(--line);
+  background: #f7f9ff;
+  color: #40506f;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: left;
+}
+.ai-output {
+  white-space: pre-wrap;
+  background: #f4f8ff;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--violet);
+  border-radius: 12px;
+  padding: 14px;
+  color: #334160;
+  margin-bottom: 22px;
+  line-height: 1.45;
+}
+.mini-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.mini-form textarea, .mini-form button { grid-column: span 2; }
 .followups .bucket-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 .bucket-grid section { background: #f7f9ff; border-radius: 14px; padding: 16px; }
 .bucket-grid h3 { margin: 0 0 14px; font-size: 15px; }
@@ -417,6 +533,10 @@ dd { margin: 0; font-weight: 900; }
   .profile { display: none; }
   .primary { width: 100%; }
   .kpi-grid, .pipeline-row, .kanban, .calendar .weekdays, .calendar .days, .followups .bucket-grid, .integration-grid, .mini-kpis { grid-template-columns: 1fr; }
+  .lead-form-grid, .ai-actions, .mini-form { grid-template-columns: 1fr; }
+  .span-2, .mini-form textarea, .mini-form button { grid-column: auto; }
+  .modal-backdrop { align-items: start; padding: 12px; }
+  .modal { max-height: 94vh; padding: 18px; }
   .panel { padding: 18px 16px; border-radius: 14px; }
   table { min-width: 560px; }
   .profile-card { padding: 22px 18px; }

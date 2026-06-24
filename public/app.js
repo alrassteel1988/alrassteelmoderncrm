@@ -257,6 +257,33 @@ function eventsForMonth(events, date) {
   });
 }
 
+function calendarActivities() {
+  const scheduledEvents = (state.data.events || []).map(event => ({
+    ...event,
+    calendarSource: "event"
+  }));
+  const leadActivities = (state.data.leads || [])
+    .map(lead => {
+      const due = lead.nextActionDate || lead.nextFollowUp || "";
+      const date = due ? new Date(due) : null;
+      if (!date || Number.isNaN(date.getTime())) return null;
+      return {
+        id: `lead-${lead.id}`,
+        date: due,
+        time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        meeting: lead.nextAction || lead.purpose || "Next lead activity",
+        title: lead.companyName || lead.company,
+        type: "Next Action",
+        leadId: lead.id,
+        company: lead.companyName || lead.company,
+        owner: ownerName(lead.ownerId),
+        calendarSource: "lead"
+      };
+    })
+    .filter(Boolean);
+  return [...scheduledEvents, ...leadActivities];
+}
+
 function calendarGrid(date, monthEvents) {
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -828,15 +855,16 @@ const pages = {
     action: { id: "new-lead", label: "+ New Event" },
     render() {
       const visibleMonth = monthDate();
-      const monthEvents = eventsForMonth(state.data.events, visibleMonth);
+      const activities = calendarActivities();
+      const monthEvents = eventsForMonth(activities, visibleMonth);
       const monthTitle = visibleMonth.toLocaleDateString([], { month: "long", year: "numeric" });
       const eventsToday = monthEvents.length;
       return `${kpiCards([
-        { label: "Events Today", value: eventsToday, delta: "" },
+        { label: "Activities", value: eventsToday, delta: "" },
         { label: "Demos", value: monthEvents.filter(event => event.type === "Demo").length, delta: "" },
         { label: "Calls", value: monthEvents.filter(event => event.type === "Call").length, delta: "" },
-        { label: "Follow-ups", value: monthEvents.filter(event => event.type === "Follow-up").length, delta: "" }
-      ])}<section class="two-col strong-left"><article class="panel calendar"><div class="calendar-head"><button type="button" data-calendar-nav="-1">Previous Month</button><h2>${monthTitle}</h2><button type="button" data-calendar-nav="1">Next Month</button></div><div class="weekdays">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => `<b>${day}</b>`).join("")}</div><div class="days">${calendarGrid(visibleMonth, monthEvents)}</div></article><article class="panel">${table(["Time", "Meeting", "Type"], monthEvents.map(event => `<tr><td><b>${event.time || displayDate(eventDate(event))}</b></td><td>${event.meeting || event.title || "Activity"}</td><td>${event.type || "Activity"}</td></tr>`), "No records")}</article></section>`;
+        { label: "Follow-ups", value: monthEvents.filter(event => event.type === "Follow-up" || event.type === "Next Action").length, delta: "" }
+      ])}<section class="two-col strong-left"><article class="panel calendar"><div class="calendar-head"><button type="button" data-calendar-nav="-1">Previous Month</button><h2>${monthTitle}</h2><button type="button" data-calendar-nav="1">Next Month</button></div><div class="weekdays">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => `<b>${day}</b>`).join("")}</div><div class="days">${calendarGrid(visibleMonth, monthEvents)}</div></article><article class="panel">${table(["Date / Time", "Activity", "Type"], monthEvents.map(event => `<tr><td><b>${event.time || displayDate(eventDate(event))}</b></td><td><b>${event.company || event.title || event.meeting || "Activity"}</b><br><span>${event.meeting || event.title || "Next activity"}${state.user.role === "admin" && event.owner ? ` · ${event.owner}` : ""}</span></td><td>${event.type || "Activity"}</td></tr>`), "No records")}</article></section>`;
     }
   },
   reports: {

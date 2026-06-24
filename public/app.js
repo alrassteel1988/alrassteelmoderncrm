@@ -46,6 +46,8 @@ const ARG_ADD_LEAD_FIELDS = [
   ["priority", "Priority", "select", false, ["High", "Medium", "Low"]],
   ["estimatedValue", "Estimated value", "number"],
   ["nextActionDate", "Next action date", "date"],
+  ["nextActionType", "Next Action", "select", false, ["To Call", "Send Email", "Visit", "Online Meeting"]],
+  ["scopeOfAction", "Scope of Action", "select", false, ["Company Introductory", "Share Quotation", "Follow Up Quotation", "Meeting for New Requirements", "Others (Any Orders, Delivery Dispute, etc)"]],
   ["firstOrderDate", "First order date", "date"],
   ["estimatedMonthlyVolume", "Est. monthly volume", "text"],
   ["productInterest", "Product interest", "text"],

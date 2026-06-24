@@ -127,6 +127,8 @@ function auth(token) {
         territory: "UAE-South",
         stage: "PROSPECT",
         estimatedValue: 12600,
+        nextActionType: "To Call",
+        scopeOfAction: "Share Quotation",
         nextAction: "Call procurement"
       })
     });
@@ -149,11 +151,16 @@ function auth(token) {
         territory: "UAE-South",
         stage: "PROSPECT",
         estimatedValue: 8500,
-        nextAction: "Admin dashboard visibility check"
+        nextActionDate: "2026-06-30",
+        nextActionType: "Online Meeting",
+        scopeOfAction: "Meeting for New Requirements"
       })
     });
     assert.equal(salesmanCreatedLead.response.status, 201);
     assert.equal(salesmanCreatedLead.body.lead.ownerId, salesmanCreate.body.user.id);
+    assert.equal(salesmanCreatedLead.body.lead.nextActionType, "Online Meeting");
+    assert.equal(salesmanCreatedLead.body.lead.scopeOfAction, "Meeting for New Requirements");
+    assert.equal(salesmanCreatedLead.body.lead.nextAction, "Online Meeting - Meeting for New Requirements");
 
     const adminAfterSalesmanLead = await request("/api/bootstrap", { headers: auth(adminLogin.body.token) });
     assert.equal(adminAfterSalesmanLead.response.status, 200);

@@ -12,6 +12,17 @@ const STATUS_VALUES = ["PROSPECT", "OUTREACH", "ENGAGED", "SAMPLING", "ACTIVE", 
 const ACTIVITY_TYPES = ["Phone Call", "Email", "In-Person Meeting", "Site Visit", "Video Call", "Quotation Sent", "Order Placed"];
 const TERRITORIES = ["UAE-North", "UAE-South", "Saudi", "Kuwait", "Bahrain", "Oman", "Mixed"];
 const SECTORS = ["Fabricator", "Contractor", "Trader", "Marine", "Piling", "Oil & Gas", "Trailer", "PEB", "Other"];
+const DEMO_COMPANY_NAMES = new Set([
+  "Apex Industries",
+  "Brighton Contractors",
+  "Vertex Tech",
+  "Global Dynamics",
+  "CloudHub Logistics",
+  "Stellar Solutions",
+  "Smoke Test Steel",
+  "Adversarial Review Steel",
+  "Unauthorized Assignment LLC"
+].map(name => name.toLowerCase()));
 const LIVE_ARG_ADD_LEAD_FIELDS = [
   "Company name", "Legal name", "Year established", "Country / Emirate", "Sector", "Tier", "Industry", "Location", "Address",
   "Contact person", "Primary title", "Phone", "Email", "Secondary contact", "Secondary title", "Secondary mobile", "Secondary email",
@@ -36,24 +47,14 @@ function loadLocalEnv() {
 }
 
 const users = [
-  { id: "u-admin", name: "Glory", email: "glory@alrassteel.com", password: "glory12345", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" },
-  { id: "u-sales-1", name: "John Smith", email: "john@alrassteel.com", password: "sales123", role: "salesman", title: "Salesman", access: "Assigned Territory", status: "Active", territory: "UAE-South" },
-  { id: "u-sales-2", name: "Sarah Chen", email: "sarah@alrassteel.com", password: "sales123", role: "salesman", title: "Saleswoman", access: "Assigned Territory", status: "Active", territory: "UAE-North" },
-  { id: "u-sales-3", name: "David Lee", email: "david@alrassteel.com", password: "sales123", role: "salesman", title: "Salesman", access: "Assigned Territory", status: "Pending", territory: "Mixed" }
+  { id: "u-admin", name: "Glory", email: "glory@alrassteel.com", username: "glory", password: "glory12345", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" }
 ];
 
 const deletionRequests = [];
 
 const now = new Date("2026-06-23T09:00:00+04:00");
 
-const leads = [
-  { id: "l1", name: "Aisha Ahmed", company: "Apex Industries", email: "aisha@apexsteel.ae", phone: "+971 50 123 7781", website: "apexsteel.ae", source: "Google Places", status: "Qualified", score: 92, ownerId: "u-sales-1", value: 42000, stage: "Proposal", region: "Dubai", sector: "Fabricator", created: "2026-05-28", priority: "High", nextFollowUp: "2026-06-23T10:00:00+04:00", purpose: "Send updated rebar quotation", notes: ["Initial meeting scheduled", "Follow-up call completed"] },
-  { id: "l2", name: "Omar Khalid", company: "Brighton Contractors", email: "omar@brightonbuild.ae", phone: "+971 55 812 4480", website: "brightonbuild.ae", source: "Website", status: "Contacted", score: 76, ownerId: "u-sales-1", value: 18500, stage: "Contacted", region: "Sharjah", sector: "Contractor", created: "2026-06-02", priority: "Medium", nextFollowUp: "2026-06-23T11:30:00+04:00", purpose: "Demo presentation", notes: ["Asked for delivery lead time"] },
-  { id: "l3", name: "Nora Reyes", company: "Vertex Tech", email: "nora@vertextech.ae", phone: "+971 56 331 2208", website: "vertextech.ae", source: "Referral", status: "New", score: 65, ownerId: "u-sales-2", value: 12600, stage: "New", region: "Abu Dhabi", sector: "Trader", created: "2026-06-05", priority: "Low", nextFollowUp: "2026-06-24T14:00:00+04:00", purpose: "Clarify steel plate sizes", notes: ["Imported from sales mailbox"] },
-  { id: "l4", name: "Maria Lopez", company: "Global Dynamics", email: "maria@globaldyn.ae", phone: "+971 52 771 9921", website: "globaldyn.ae", source: "Market Intelligence", status: "Proposal", score: 88, ownerId: "u-sales-1", value: 31500, stage: "Proposal", region: "Dubai", sector: "Marine", created: "2026-06-07", priority: "High", nextFollowUp: "2026-06-26T15:00:00+04:00", purpose: "Review proposal", notes: ["Linked to port expansion news"] },
-  { id: "l5", name: "Daniel Kim", company: "CloudHub Logistics", email: "daniel@cloudhub.ae", phone: "+971 58 908 4412", website: "cloudhub.ae", source: "LinkedIn", status: "Won", score: 84, ownerId: "u-sales-3", value: 62380, stage: "Won", region: "Ajman", sector: "PEB", created: "2026-06-09", priority: "Medium", nextFollowUp: "2026-06-28T09:30:00+04:00", purpose: "Renewal quote", notes: ["Won first trial order"] },
-  { id: "l6", name: "James Morris", company: "Stellar Solutions", email: "james@stellar.ae", phone: "+971 54 667 1290", website: "stellar.ae", source: "Google Places", status: "Qualified", score: 98, ownerId: "u-sales-2", value: 12000, stage: "Qualified", region: "Ras Al Khaimah", sector: "Oil & Gas", created: "2026-06-10", priority: "High", nextFollowUp: "2026-06-22T16:00:00+04:00", purpose: "Overdue specification check", notes: ["Needs ASTM certificate"] }
-];
+const leads = [];
 
 function inferStatus(lead) {
   if (STATUS_VALUES.includes(lead.status)) return lead.status;
@@ -97,82 +98,29 @@ function normalizeCompanyRecord(lead, index = 0) {
   return lead;
 }
 
+function isDemoLead(lead) {
+  return DEMO_COMPANY_NAMES.has(String(lead?.companyName || lead?.company || "").trim().toLowerCase());
+}
+
 leads.forEach(normalizeCompanyRecord);
 
-const activities = [
-  { id: "a1", companyId: "ARG-00001", leadId: "l1", at: "2026-06-23T10:05:00+04:00", type: "Phone Call", loggedBy: "u-sales-1", notes: "Discussed updated steel plate pricing and delivery window.", quotationRef: "Q-ARS-1024", pmrLinked: false },
-  { id: "a2", companyId: "ARG-00002", leadId: "l2", at: "2026-06-22T11:30:00+04:00", type: "Video Call", loggedBy: "u-sales-1", notes: "Demo presentation completed. Client asked for mill certificates.", quotationRef: "", pmrLinked: false },
-  { id: "a3", companyId: "ARG-00004", leadId: "l4", at: "2026-06-21T15:00:00+04:00", type: "Site Visit", loggedBy: "u-sales-1", notes: "Marine fabrication requirement confirmed near Jebel Ali.", quotationRef: "Q-ARS-1041", pmrLinked: true }
-];
+const activities = [];
 
-const pmrs = [
-  {
-    id: "pmr1",
-    companyId: "ARG-00004",
-    leadId: "l4",
-    activityId: "a3",
-    meetingDate: "2026-06-21",
-    filedBy: "u-sales-1",
-    productsDiscussed: "Marine plate, pipe, certified beams",
-    competitorsMentioned: "Regional stockists",
-    complianceRequirements: ["ISO", "DNV"],
-    relationshipHeatScore: 4,
-    firstOrderTiming: "30-90 days",
-    potentialAnnualValue: "500K-2M",
-    directorActionRequired: "Awareness only",
-    accountStatus: "Warm",
-    rawDocumentUrl: "",
-    notes: "Strong technical interest. Confirm availability and mill certificate pack."
-  }
-];
+const pmrs = [];
 
-const configAudit = [
-  { change_id: "chg-001", timestamp: "2026-06-23T16:00:00+04:00", changed_by_user: "Alex Rivera", user_role: "admin", parameter_changed: "Tier 1 follow-up threshold", previous_value: "14 days", new_value: "10 days", plain_language_input: "Show Tier 1 accounts sooner when they go quiet.", agent_interpretation: "Reduce Tier 1 inactivity threshold from 14 to 10 days.", confirmation_given: true, business_reason: "High priority accounts need tighter attention.", review_trigger: "Review after 30 days" }
-];
+const configAudit = [];
 
-const deals = [
-  { id: "d1", title: "Enterprise Plate Order", leadId: "l1", company: "Apex Industries", stage: "Proposal", value: 24000, close: "2026-05-28", probability: 72, ownerId: "u-sales-1" },
-  { id: "d2", title: "Fabrication Steel Bundle", leadId: "l4", company: "Global Dynamics", stage: "Proposal", value: 18500, close: "2026-05-30", probability: 68, ownerId: "u-sales-1" },
-  { id: "d3", title: "Warehouse Beam Supply", leadId: "l2", company: "Brighton Contractors", stage: "Contacted", value: 15200, close: "2026-06-02", probability: 48, ownerId: "u-sales-1" },
-  { id: "d4", title: "Training Mill Visit", leadId: "l5", company: "CloudHub Logistics", stage: "Won", value: 12680, close: "2026-06-05", probability: 100, ownerId: "u-sales-3" }
-];
+const deals = [];
 
-const tasks = [
-  { id: "t1", title: "Follow up proposal", relatedTo: "Apex Industries", priority: "High", due: "10:00", status: "Open", ownerId: "u-sales-1" },
-  { id: "t2", title: "Call renewal client", relatedTo: "Vertex Tech", priority: "Medium", due: "11:30", status: "Open", ownerId: "u-sales-2" },
-  { id: "t3", title: "Send demo deck", relatedTo: "Brighton Contractors", priority: "High", due: "13:00", status: "Open", ownerId: "u-sales-1" },
-  { id: "t4", title: "Update lead score", relatedTo: "Stellar Solutions", priority: "Low", due: "14:30", status: "Done", ownerId: "u-sales-2" },
-  { id: "t5", title: "Prepare contract", relatedTo: "Global Dynamics", priority: "High", due: "Tomorrow", status: "Open", ownerId: "u-sales-1" }
-];
+const tasks = [];
 
-const messages = [
-  { id: "m1", sender: "Aisha Ahmed", company: "Apex Industries", subject: "Pricing request", time: "2m", unread: true, body: ["Hi Alex, can you send the updated steel pricing for 25 tons?", "Great, please include monthly and annual payment options."] },
-  { id: "m2", sender: "Omar Khalid", company: "Brighton Contractors", subject: "Demo follow-up", time: "15m", unread: true, body: ["Can we move the demo to 11:30?"] },
-  { id: "m3", sender: "Team Sales", company: "Internal", subject: "Pipeline updates", time: "1h", unread: false, body: ["Please update proposal stages before the 3 PM review."] },
-  { id: "m4", sender: "Maria Lopez", company: "Global Dynamics", subject: "Contract question", time: "2h", unread: false, body: ["Do you have revised payment terms?"] }
-];
+const messages = [];
 
-const events = [
-  { id: "e1", time: "09:00", meeting: "Pipeline review", type: "Internal", ownerId: "u-admin" },
-  { id: "e2", time: "10:00", meeting: "Discovery call", type: "Call", ownerId: "u-sales-1" },
-  { id: "e3", time: "11:30", meeting: "Brighton demo", type: "Demo", ownerId: "u-sales-1" },
-  { id: "e4", time: "13:00", meeting: "Lunch follow-up", type: "Follow-up", ownerId: "u-sales-2" },
-  { id: "e5", time: "15:00", meeting: "Proposal review", type: "Meeting", ownerId: "u-sales-1" },
-  { id: "e6", time: "16:30", meeting: "Client callback", type: "Call", ownerId: "u-sales-3" }
-];
+const events = [];
 
-const reports = [
-  { id: "r1", report: "Monthly Sales", owner: "Admin", updated: "Today", status: "Ready" },
-  { id: "r2", report: "Lead Conversion", owner: "Admin", updated: "Yesterday", status: "Ready" },
-  { id: "r3", report: "Pipeline Risk", owner: "Manager", updated: "Jun 20", status: "Draft" },
-  { id: "r4", report: "Activity Summary", owner: "Sales Ops", updated: "Jun 18", status: "Ready" }
-];
+const reports = [];
 
-const marketIntel = [
-  { id: "mi1", title: "Dubai contractor tender mentions 2,000 tons of structural steel", source: "Market Feed", geography_tags: ["Dubai"], sector_tags: ["Contractor", "Fabricator"], companies_mentioned: ["Brighton Contractors"], relevance_score: 0.82, summary: "Potential demand for beams and plates in Dubai construction tenders.", published_at: "2026-06-21T08:00:00+04:00" },
-  { id: "mi2", title: "Marine fabrication demand rises around Jebel Ali yards", source: "Market Feed", geography_tags: ["Dubai"], sector_tags: ["Marine"], companies_mentioned: ["Global Dynamics"], relevance_score: 0.76, summary: "Marine repair and fabrication activity is creating plate and pipe opportunities.", published_at: "2026-06-19T08:00:00+04:00" },
-  { id: "mi3", title: "RAK oil and gas suppliers expand material procurement", source: "Market Feed", geography_tags: ["Ras Al Khaimah"], sector_tags: ["Oil & Gas"], companies_mentioned: ["Stellar Solutions"], relevance_score: 0.71, summary: "Suppliers are sourcing certified structural materials for Q3 projects.", published_at: "2026-06-17T08:00:00+04:00" }
-];
+const marketIntel = [];
 
 const fallbackIndustryNews = [
   { title: "GCC construction tender pipeline keeps steel demand resilient", source: "Al Ras Market Desk", description: "Contract awards and infrastructure work continue to support rebar, plate, and beam enquiries.", url: "#", publishedAt: "2026-06-24T06:00:00Z", category: "Construction" },
@@ -311,6 +259,7 @@ async function syncSupabaseLeadsOnce() {
     let added = 0;
     for (const row of data || []) {
       const lead = row.payload;
+      if (isDemoLead(lead)) continue;
       if (!lead?.id || leads.some(item => item.id === lead.id || item.companyId === lead.companyId)) continue;
       leads.unshift(normalizeCompanyRecord(lead, leads.length));
       added += 1;
@@ -318,6 +267,51 @@ async function syncSupabaseLeadsOnce() {
     return { disabled: false, added };
   } catch (error) {
     return { disabled: false, error: error.message };
+  }
+}
+
+async function syncSupabaseUsersOnce() {
+  if (!supabaseConfig().enabled) return { disabled: true };
+  try {
+    const { data } = await supabaseRest("crm_users", { query: "?select=payload&order=created_at.asc" });
+    let added = 0;
+    for (const row of data || []) {
+      const person = row.payload;
+      if (!person?.id || !person.email || users.some(item => item.id === person.id || item.email.toLowerCase() === String(person.email).toLowerCase())) continue;
+      users.push({
+        ...person,
+        username: person.username || String(person.email).split("@")[0],
+        role: person.role === "admin" ? "salesman" : "salesman",
+        title: person.title || "Salesman",
+        access: "Assigned Territory",
+        status: person.status || "Active",
+        territory: TERRITORIES.includes(person.territory) ? person.territory : "Mixed"
+      });
+      added += 1;
+    }
+    return { disabled: false, added };
+  } catch (error) {
+    return { disabled: false, error: error.message };
+  }
+}
+
+async function persistUserToSupabase(user) {
+  if (user.role === "admin") return { skipped: true };
+  try {
+    await supabaseRest("crm_users", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        payload: user
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
   }
 }
 
@@ -364,6 +358,11 @@ function currentUser(req) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   return sessions.get(token) || null;
+}
+
+function safeUser(user) {
+  const { password, ...safe } = user;
+  return safe;
 }
 
 function visibleLeads(user) {
@@ -456,6 +455,7 @@ function dashboardFor(user) {
   const scopedDeals = visibleDeals(user);
   const scopedTasks = visibleTasks(user);
   const totalRevenue = scopedDeals.filter(deal => deal.stage === "Won").reduce((sum, deal) => sum + money(deal.value), 0);
+  const totalPipelineValue = scopedDeals.reduce((sum, deal) => sum + money(deal.value), 0) + scopedLeads.reduce((sum, lead) => sum + money(lead.value), 0);
   const pipeline = STATUS_VALUES.map(stage => {
     const stageDeals = scopedDeals.filter(deal => deal.stage === stage);
     const stageLeadFallback = scopedLeads.filter(lead => lead.status === stage && !stageDeals.some(deal => deal.leadId === lead.id));
@@ -465,16 +465,16 @@ function dashboardFor(user) {
   return {
     user,
     kpis: {
-      revenue: user.role === "admin" ? 248680 : Math.max(totalRevenue, 78450),
-      newLeads: scopedLeads.filter(lead => lead.status === "PROSPECT").length || 42,
+      revenue: totalRevenue || totalPipelineValue,
+      newLeads: scopedLeads.filter(lead => lead.status === "PROSPECT").length,
       opportunities: scopedDeals.length,
-      winRate: scopedDeals.length ? Math.round((scopedDeals.filter(deal => deal.stage === "Won").length / scopedDeals.length) * 1000) / 10 : 26.8,
+      winRate: scopedDeals.length ? Math.round((scopedDeals.filter(deal => deal.stage === "Won").length / scopedDeals.length) * 1000) / 10 : 0,
       activeSalesmen: users.filter(person => person.role !== "admin" && person.status === "Active").length
     },
     pipeline,
-    salesTrend: [42000, 59000, 52000, 78000, 66000, 91000, 80000, 112000],
+    salesTrend: scopedLeads.length ? [0, 0, 0, 0, 0, 0, totalRevenue || totalPipelineValue, totalRevenue || totalPipelineValue] : [0, 0, 0, 0, 0, 0, 0, 0],
     topLeads: scopedLeads.slice().sort((a, b) => b.score - a.score).slice(0, 5),
-    activities: ["Deal won", "Email opened", "Call completed", "Note added", "Lead assigned"].map((event, index) => ({ event, time: index ? `${index + 2}h ago` : "2h ago" })),
+    activities: activities.slice(0, 5).map(activity => ({ event: activity.type, time: new Date(activity.at).toLocaleString() })),
     tasks: scopedTasks.slice(0, 5),
     schedule: events.filter(event => user.role === "admin" || event.ownerId === user.id || event.ownerId === "u-admin")
   };
@@ -753,11 +753,13 @@ function serveStatic(req, res) {
 async function handleApi(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
+    await syncSupabaseUsersOnce();
     const body = await readBody(req);
-    const found = users.find(user => user.email.toLowerCase() === String(body.email || "").toLowerCase() && user.password === body.password);
+    const loginId = String(body.email || body.username || "").trim().toLowerCase();
+    const found = users.find(user => (user.email.toLowerCase() === loginId || String(user.username || "").toLowerCase() === loginId) && user.password === body.password);
     if (!found) return send(res, 401, { error: "Invalid email or password." });
     const token = crypto.randomBytes(24).toString("hex");
-    const user = { id: found.id, name: found.name, email: found.email, role: found.role, title: found.title, access: found.access, status: found.status };
+    const user = safeUser(found);
     sessions.set(token, user);
     return send(res, 200, { token, user });
   }
@@ -778,12 +780,13 @@ async function handleApi(req, res) {
   if (!user) return send(res, 401, { error: "Authentication required." });
 
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
+    const supabaseUsers = await syncSupabaseUsersOnce();
     const supabaseSync = await syncSupabaseLeadsOnce();
     const industryNews = await industryNewsFeed();
     const scopedLeads = visibleLeads(user).map(decorateLead);
     return send(res, 200, {
       user,
-      users: user.role === "admin" ? users.map(({ password, ...safe }) => safe) : [],
+      users: user.role === "admin" ? users.map(safeUser) : [],
       dashboard: dashboardFor(user),
       leads: scopedLeads,
       deals: visibleDeals(user),
@@ -800,7 +803,7 @@ async function handleApi(req, res) {
       pmrs: pmrs.filter(pmr => scopedLeads.some(lead => lead.companyId === pmr.companyId || lead.id === pmr.leadId)),
       deletionRequests: user.role === "admin" ? deletionRequests.filter(request => request.status === "Pending") : deletionRequests.filter(request => request.requestedBy === user.id),
       configAudit: user.role === "admin" ? configAudit : [],
-      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, sync: supabaseSync } }
+      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, users: supabaseUsers, leads: supabaseSync } }
     });
   }
   if (req.method === "GET" && url.pathname === "/api/export/leads.csv") {
@@ -821,14 +824,17 @@ async function handleApi(req, res) {
     if (user.role !== "admin") return send(res, 403, { error: "Only admin can create salesman accounts." });
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
+    const username = String(body.username || email.split("@")[0] || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "");
     const password = String(body.password || "").trim();
     const name = String(body.name || "").trim();
-    if (!name || !email || !password) return send(res, 400, { error: "Name, email, and password are required." });
-    if (users.some(person => person.email.toLowerCase() === email)) return send(res, 409, { error: "A user with this email already exists." });
+    if (!name || !email || !username || !password) return send(res, 400, { error: "Name, username, email, and password are required." });
+    if (password.length < 8) return send(res, 400, { error: "Password must be at least 8 characters." });
+    if (users.some(person => person.email.toLowerCase() === email || String(person.username || "").toLowerCase() === username)) return send(res, 409, { error: "A user with this email or username already exists." });
     const salesman = {
       id: `u-sales-${users.filter(person => person.role !== "admin").length + 1}`,
       name,
       email,
+      username,
       password,
       role: "salesman",
       title: body.title || "Salesman",
@@ -837,8 +843,8 @@ async function handleApi(req, res) {
       territory: TERRITORIES.includes(body.territory) ? body.territory : "Mixed"
     };
     users.push(salesman);
-    const { password: _password, ...safe } = salesman;
-    return send(res, 201, { user: safe });
+    const supabase = await persistUserToSupabase(salesman);
+    return send(res, 201, { user: safeUser(salesman), supabase });
   }
   if (req.method === "POST" && url.pathname === "/api/leads/check-duplicate") {
     const body = await readBody(req);
@@ -848,8 +854,9 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     const companyName = body.companyName || body.company || body["Company name"];
     if (!companyName) return send(res, 400, { error: "Company name is required." });
-    const ownerId = user.role === "admin" ? body.ownerId || body.assignedSalesman || "u-sales-1" : user.id;
-    if (!ownerId) return send(res, 400, { error: "Assigned salesman is required." });
+    const ownerId = user.role === "admin" ? body.ownerId || body.assignedSalesman : user.id;
+    if (!ownerId) return send(res, 400, { error: "Assigned salesman is required. Create a salesman account first." });
+    if (user.role === "admin" && !users.some(person => person.id === ownerId && person.role === "salesman")) return send(res, 400, { error: "Assigned salesman must be an existing salesman account." });
     const lead = {
       id: `l${leads.length + 1}`,
       companyId: `ARG-${String(leads.length + 1).padStart(5, "0")}`,

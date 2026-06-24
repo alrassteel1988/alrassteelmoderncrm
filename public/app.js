@@ -88,7 +88,7 @@ const money = value => `AED ${Number(value || 0).toLocaleString()}`;
 const compactMoney = value => `AED ${Number(value || 0).toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })}`;
 const pct = value => `${Number(value || 0).toLocaleString()}%`;
 const el = selector => document.querySelector(selector);
-const ownerName = id => state.data?.users?.find(user => user.id === id)?.name || (id === state.user?.id ? state.user.name : "John Smith");
+const ownerName = id => state.data?.users?.find(user => user.id === id)?.name || (id === state.user?.id ? state.user.name : "Unassigned");
 
 function statusMeta(status) {
   const key = String(status || "").toUpperCase();
@@ -228,14 +228,14 @@ function renderLogin(error = "") {
         <h1>Leads Tracker</h1>
         <p>Full-stack CRM workspace for steel leads, deals, follow-ups, AI transcription, Google Places discovery, and market intelligence.</p>
         <form id="loginForm" class="login-form">
-          <label>Email <input name="email" value="glory@alrassteel.com" autocomplete="email"></label>
+          <label>Email or username <input name="email" value="glory@alrassteel.com" autocomplete="username"></label>
           <label>Password <input name="password" type="password" value="glory12345" autocomplete="current-password"></label>
           ${error ? `<div class="error">${error}</div>` : ""}
           <button class="primary" type="submit">Sign In</button>
         </form>
         <div class="login-hints">
           <span>Admin: glory@alrassteel.com / glory12345</span>
-          <span>Salesman: john@alrassteel.com / sales123</span>
+          <span>Salesman accounts must be created by the admin first.</span>
         </div>
       </section>
     </main>
@@ -362,7 +362,7 @@ function table(headers, rows, empty = "No records") {
 function lineChart(values, options = {}) {
   const showAxis = Boolean(options.xLabel || options.yLabel || options.xLabels);
   if (!showAxis) {
-    const max = Math.max(...values);
+    const max = Math.max(...values, 1);
     const points = values.map((value, index) => `${index * 58 + 14},${150 - (value / max) * 120}`).join(" ");
     return `<svg class="line-chart" viewBox="0 0 440 170" role="img" aria-label="Revenue trend">
       ${[30, 65, 100, 135].map(y => `<line x1="0" x2="440" y1="${y}" y2="${y}"></line>`).join("")}
@@ -370,7 +370,7 @@ function lineChart(values, options = {}) {
       ${points.split(" ").map(point => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="4"></circle>`).join("")}
     </svg>`;
   }
-  const max = Math.max(...values);
+  const max = Math.max(...values, 1);
   const xLabels = options.xLabels || values.map((_, index) => `P${index + 1}`);
   const yLabel = options.yLabel || "Value";
   const xLabel = options.xLabel || "Period";
@@ -403,7 +403,7 @@ function lineChart(values, options = {}) {
 
 function barChart(items, options = {}) {
   const showAxis = Boolean(options.xLabel || options.yLabel);
-  const max = Math.max(...items.map(item => item.value || item.count));
+  const max = Math.max(...items.map(item => item.value || item.count), 1);
   if (!showAxis) {
     return `<div class="bar-chart simple-bar-chart">${items.map(item => `
       <div><span style="height:${Math.max(18, ((item.value || item.count) / max) * 180)}px"></span><small>${item.label}</small></div>
@@ -425,11 +425,11 @@ function dashboardCards() {
   const d = state.data.dashboard;
   const admin = state.user.role === "admin";
   return kpiCards([
-    { label: admin ? "Total Revenue" : "Monthly Sales", value: money(d.kpis.revenue), delta: "18.6%" },
-    { label: "New Leads", value: d.kpis.newLeads, delta: "12.4%" },
-    { label: admin ? "Opportunities" : "Quota Progress", value: admin ? d.kpis.opportunities : "67%", delta: admin ? "8.7%" : "on track" },
-    { label: admin ? "Win Rate" : "Conversion", value: pct(d.kpis.winRate), delta: "6.1%" },
-    { label: "Active Salesmen", value: d.kpis.activeSalesmen, delta: "4.1%" }
+    { label: admin ? "Total Revenue" : "Monthly Sales", value: money(d.kpis.revenue), delta: "" },
+    { label: "New Leads", value: d.kpis.newLeads, delta: "" },
+    { label: admin ? "Opportunities" : "Quota Progress", value: admin ? d.kpis.opportunities : "0%", delta: "" },
+    { label: admin ? "Win Rate" : "Conversion", value: pct(d.kpis.winRate), delta: "" },
+    { label: "Active Salesmen", value: d.kpis.activeSalesmen, delta: "" }
   ]);
 }
 
@@ -494,8 +494,9 @@ function salesmanAccountForm() {
     <p>Only the admin account can create individual salesman logins.</p>
     <div>
       <label>Name <input name="name" required></label>
+      <label>Username <input name="username" autocomplete="username" required></label>
       <label>Email <input name="email" type="email" required></label>
-      <label>Password <input name="password" type="password" required></label>
+      <label>Password <input name="password" type="password" minlength="8" required></label>
       <label>Territory <select name="territory">${["UAE-North", "UAE-South", "Saudi", "Kuwait", "Bahrain", "Oman", "Mixed"].map(item => `<option>${item}</option>`).join("")}</select></label>
     </div>
     <button class="primary" type="submit">Create Salesman</button>
@@ -510,9 +511,11 @@ const pages = {
     render() {
       const d = state.data.dashboard;
       const isAdmin = state.user.role === "admin";
-      const salesOverviewCard = `<article class="panel sales-overview ${isAdmin ? "compact-chart" : "wide"}"><h2>${isAdmin ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>↑ 18.6% this month</em></div>${lineChart(d.salesTrend)}</article>`;
+      const quotaPct = d.kpis.revenue > 0 ? Math.min(100, Math.round((d.kpis.revenue / 115000) * 100)) : 0;
+      const quotaRemaining = Math.max(0, 115000 - d.kpis.revenue);
+      const salesOverviewCard = `<article class="panel sales-overview ${isAdmin ? "compact-chart" : "wide"}"><h2>${isAdmin ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>${d.kpis.revenue ? "live total" : "no revenue yet"}</em></div>${lineChart(d.salesTrend)}</article>`;
       const pipelineCard = `<article class="panel pipeline ${isAdmin ? "wide" : ""}"><h2>${isAdmin ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${statusMeta(stage.stage).label}</b><strong>${money(stage.value)}</strong><small>${stage.count} accounts</small><button data-route="deals">View Deals</button></div>`).join("")}</div></article>`;
-      const quotaCard = `<article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of ${compactMoney(115000)}</span></div><footer><b>${money(78450)} achieved</b><span>${money(36550)} to go</span></footer></article>`;
+      const quotaCard = `<article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:${quotaPct}"><strong>${quotaPct}%</strong><span>of ${compactMoney(115000)}</span></div><footer><b>${money(d.kpis.revenue)} achieved</b><span>${money(quotaRemaining)} to go</span></footer></article>`;
       const primaryCards = isAdmin ? `${pipelineCard}${quotaCard}${salesOverviewCard}` : `${salesOverviewCard}${quotaCard}${pipelineCard}`;
       return `
         ${dashboardNewsStrip()}
@@ -601,12 +604,16 @@ const pages = {
     subtitle: "Plan daily activities, follow-ups, demos, calls, proposals, and reminders.",
     action: { id: "new-lead", label: "+ Add Task" },
     render() {
-      const counts = { High: 42, Medium: 31, Low: 18 };
+      const counts = ["High", "Medium", "Low"].reduce((acc, key) => ({ ...acc, [key]: state.data.tasks.filter(task => task.priority === key).length }), {});
+      const totalTasks = state.data.tasks.length;
+      const dueToday = state.data.tasks.filter(task => task.due === "Today").length;
+      const completed = state.data.tasks.filter(task => task.status === "Done").length;
+      const overdue = state.data.tasks.filter(task => task.status === "Overdue").length;
       return `${kpiCards([
-        { label: "Total Tasks", value: 78, delta: "6.5%" },
-        { label: "Due Today", value: 14, delta: "3.1%" },
-        { label: "Completed", value: 42, delta: "9.4%" },
-        { label: "Overdue", value: 12, delta: "2.3%" }
+        { label: "Total Tasks", value: totalTasks, delta: "" },
+        { label: "Due Today", value: dueToday, delta: "" },
+        { label: "Completed", value: completed, delta: "" },
+        { label: "Overdue", value: overdue, delta: "" }
       ])}${weeklySalesReportPanel()}<section class="two-col strong-left"><article class="panel">${table(["Task", "Related To", "Priority", "Due", "Status"], state.data.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.relatedTo}</td><td>${task.priority}</td><td>${task.due}</td><td>${task.status}</td></tr>`))}</article><div class="stack"><article class="panel"><h2>Priority Breakdown</h2>${Object.entries(counts).map(([key, value], index) => `<div class="progress-row"><b>${key}</b><i class="tone-${index}" style="--w:${value * 2}%"></i><span>${value}</span></div>`).join("")}</article><article class="panel">${table(["Reminder", "Time"], state.data.tasks.slice(0, 4).map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`), "No reminders")}</article></div></section>`;
     }
   },
@@ -615,12 +622,13 @@ const pages = {
     subtitle: "View meetings, demos, calls, follow-ups, and weekly sales schedule.",
     action: { id: "new-lead", label: "+ New Event" },
     render() {
-      const marked = [3, 8, 14, 19, 23, 28];
+      const marked = state.data.events.map(event => Number(String(event.date || event.day || "").slice(-2))).filter(Boolean);
+      const eventsToday = state.data.events.length;
       return `${kpiCards([
-        { label: "Events Today", value: 9, delta: "5.1%" },
-        { label: "Demos", value: 4, delta: "8.8%" },
-        { label: "Calls", value: 12, delta: "6.2%" },
-        { label: "Follow-ups", value: 18, delta: "11.1%" }
+        { label: "Events Today", value: eventsToday, delta: "" },
+        { label: "Demos", value: state.data.events.filter(event => event.type === "Demo").length, delta: "" },
+        { label: "Calls", value: state.data.events.filter(event => event.type === "Call").length, delta: "" },
+        { label: "Follow-ups", value: state.data.events.filter(event => event.type === "Follow-up").length, delta: "" }
       ])}<section class="two-col strong-left"><article class="panel calendar"><h2>June 2026</h2><div class="weekdays">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => `<b>${day}</b>`).join("")}</div><div class="days">${Array.from({ length: 30 }, (_, i) => `<button><span>${i + 1}</span>${marked.includes(i + 1) ? "<i></i>" : ""}</button>`).join("")}</div></article><article class="panel">${table(["Time", "Meeting", "Type"], state.data.events.map(event => `<tr><td><b>${event.time}</b></td><td>${event.meeting}</td><td>${event.type}</td></tr>`))}</article></section>`;
     }
   },
@@ -629,12 +637,25 @@ const pages = {
     subtitle: "Analyze revenue, sales performance, conversion, sources, and team productivity.",
     action: { id: "export", label: "Export Report" },
     render() {
+      const leadSources = [
+        { label: "Manual", value: state.data.leads.filter(lead => lead.source === "Manual").length },
+        { label: "Google", value: state.data.leads.filter(lead => String(lead.source || "").includes("Google")).length },
+        { label: "Website", value: state.data.leads.filter(lead => lead.source === "Website").length },
+        { label: "Other", value: state.data.leads.filter(lead => lead.source && lead.source !== "Manual" && lead.source !== "Website" && !String(lead.source).includes("Google")).length }
+      ];
+      const rankingRows = state.data.users.filter(user => user.role !== "admin").map(user => {
+        const ownedDeals = state.data.deals.filter(deal => deal.ownerId === user.id);
+        const won = ownedDeals.filter(deal => deal.stage === "Won");
+        const revenue = won.reduce((sum, deal) => sum + Number(deal.value || 0), 0);
+        const winRate = ownedDeals.length ? `${Math.round((won.length / ownedDeals.length) * 100)}%` : "0%";
+        return `<tr><td><b>${user.name}</b></td><td>${ownedDeals.length}</td><td>${money(revenue)}</td><td>${winRate}</td></tr>`;
+      });
       return `<section class="reports-view">${kpiCards([
-        { label: "Revenue", value: compactMoney(248000), delta: "18.6%" },
-        { label: "Conversion", value: "26.8%", delta: "6.1%" },
-        { label: "Lead Sources", value: 8, delta: "4.4%" },
-        { label: "Team Activity", value: "1,204", delta: "9.7%" }
-      ])}<section class="two-col"><article class="panel chart-panel"><h2>Revenue Performance</h2><strong class="large">${money(248680)}</strong>${lineChart([42, 58, 51, 80, 65, 94, 76, 110], { title: "Monthly revenue performance", xLabel: "Month", yLabel: "Revenue (AED k)", xLabels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"] })}</article><article class="panel chart-panel"><h2>Lead Source Breakdown</h2>${barChart([{ label: "Jan", value: 42 }, { label: "Feb", value: 60 }, { label: "Mar", value: 48 }, { label: "Apr", value: 78 }, { label: "May", value: 68 }, { label: "Jun", value: 96 }], { title: "Lead source count by month", xLabel: "Month", yLabel: "Lead count" })}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], [["Alex Rivera", 18, money(78450), "28%"], ["John Smith", 15, money(62300), "24%"], ["Sarah Chen", 13, money(55200), "22%"], ["David Lee", 10, money(41700), "19%"]].map(row => `<tr>${row.map((cell, i) => `<td>${i === 0 ? `<b>${cell}</b>` : cell}</td>`).join("")}</tr>`))}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`))}</article></section></section>`;
+        { label: "Revenue", value: compactMoney(state.data.dashboard.kpis.revenue), delta: "" },
+        { label: "Conversion", value: pct(state.data.dashboard.kpis.winRate), delta: "" },
+        { label: "Lead Sources", value: leadSources.filter(source => source.value > 0).length, delta: "" },
+        { label: "Team Activity", value: state.data.activities.length, delta: "" }
+      ])}<section class="two-col"><article class="panel chart-panel"><h2>Revenue Performance</h2><strong class="large">${money(state.data.dashboard.kpis.revenue)}</strong>${lineChart(state.data.dashboard.salesTrend, { title: "Monthly revenue performance", xLabel: "Month", yLabel: "Revenue (AED k)", xLabels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"] })}</article><article class="panel chart-panel"><h2>Lead Source Breakdown</h2>${barChart(leadSources, { title: "Lead source count by source", xLabel: "Source", yLabel: "Lead count" })}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], rankingRows, "Create salesman accounts to populate ranking")}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`), "No reports generated yet")}</article></section></section>`;
     }
   },
   messages: {
@@ -644,11 +665,11 @@ const pages = {
     render() {
       const selected = state.data.messages.find(message => message.id === state.selectedMessageId) || state.data.messages[0];
       return `${kpiCards([
-        { label: "Unread", value: state.data.messages.filter(m => m.unread).length + 22, delta: "5.2%" },
-        { label: "Client Chats", value: 88, delta: "8.3%" },
-        { label: "Team Threads", value: 14, delta: "2.1%" },
-        { label: "Response Rate", value: "94%", delta: "4.2%" }
-      ])}<section class="split-view messages-view"><article class="panel">${table(["Sender", "Subject", "Time"], state.data.messages.map(message => `<tr data-message-id="${message.id}" class="${selected.id === message.id ? "selected" : ""}"><td><b>${message.sender}</b></td><td>${message.subject}</td><td>${message.time}</td></tr>`))}</article><article class="panel chat"><h2>${selected.sender}</h2><p>${selected.company} · ${selected.subject}</p><div class="bubble">${selected.body[0]}</div><div class="bubble mine">Sure. I’ll send the updated proposal and include implementation options.</div><div class="bubble">${selected.body[1] || "Thanks, please attach it with the next follow-up task."}</div><div class="bubble mine">Done. I’ll attach it with the next follow-up task.</div><input placeholder="Write a message..."></article></section>`;
+        { label: "Unread", value: state.data.messages.filter(m => m.unread).length, delta: "" },
+        { label: "Client Chats", value: state.data.messages.filter(m => m.company !== "Internal").length, delta: "" },
+        { label: "Team Threads", value: state.data.messages.filter(m => m.company === "Internal").length, delta: "" },
+        { label: "Response Rate", value: "0%", delta: "" }
+      ])}<section class="split-view messages-view"><article class="panel">${table(["Sender", "Subject", "Time"], state.data.messages.map(message => `<tr data-message-id="${message.id}" class="${selected?.id === message.id ? "selected" : ""}"><td><b>${message.sender}</b></td><td>${message.subject}</td><td>${message.time}</td></tr>`), "No messages yet")}</article><article class="panel chat">${selected ? `<h2>${selected.sender}</h2><p>${selected.company} · ${selected.subject}</p><div class="bubble">${selected.body[0]}</div><input placeholder="Write a message...">` : "<h2>No conversation selected</h2><p>Create leads and conversations to populate this workspace.</p>"}</article></section>`;
     },
     bind() {
       document.querySelectorAll("[data-message-id]").forEach(row => row.addEventListener("click", () => {
@@ -663,11 +684,11 @@ const pages = {
     action: { id: "logout", label: "Sign Out" },
     render() {
       return `${kpiCards([
-        { label: "Users", value: state.user.role === "admin" ? 18 : 1, delta: "4.1%" },
-        { label: "Roles", value: 4, delta: "0.0%" },
-        { label: "Automations", value: 12, delta: "7.5%" },
-        { label: "Integrations", value: 6, delta: "2.8%" }
-      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage director and salesman access permissions by territory.</p>${salesmanAccountForm()}${table(["User", "Role", "Territory", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.title || user.role}</td><td>${user.territory || "Mixed"}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can request lead deletion", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}${state.data.configAudit?.length ? `<article class="panel full">${table(["Change", "Parameter", "Previous", "New", "Confirmed"], state.data.configAudit.map(change => `<tr><td><b>${change.change_id}</b></td><td>${change.parameter_changed}</td><td>${change.previous_value}</td><td>${change.new_value}</td><td>${change.confirmation_given ? "Yes" : "No"}</td></tr>`))}</article>` : ""}`;
+        { label: "Users", value: state.user.role === "admin" ? state.data.users.length : 1, delta: "" },
+        { label: "Roles", value: 2, delta: "" },
+        { label: "Automations", value: 0, delta: "" },
+        { label: "Integrations", value: state.data.meta?.supabase?.configured ? 1 : 0, delta: "" }
+      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage director and salesman access permissions by territory.</p>${salesmanAccountForm()}${table(["User", "Username", "Role", "Territory", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.username || "—"}</td><td>${user.title || user.role}</td><td>${user.territory || "Mixed"}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can request lead deletion", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}${state.data.configAudit?.length ? `<article class="panel full">${table(["Change", "Parameter", "Previous", "New", "Confirmed"], state.data.configAudit.map(change => `<tr><td><b>${change.change_id}</b></td><td>${change.parameter_changed}</td><td>${change.previous_value}</td><td>${change.new_value}</td><td>${change.confirmation_given ? "Yes" : "No"}</td></tr>`))}</article>` : ""}`;
     }
   }
 };
@@ -709,7 +730,7 @@ function renderLeadFormModal() {
           if (name === "notes") return `<label class="span-2 ai-note-field"><span>${label}${required ? " *" : ""}</span><div class="note-tools"><button type="button" data-whisper-note>Record Note</button><small>Whisper detects the spoken language and inserts English notes.</small></div><textarea name="${name}" ${req}></textarea></label>`;
           if (type === "textarea") return `<label class="span-2">${label}${required ? " *" : ""}<textarea name="${name}" ${req}></textarea></label>`;
           if (type === "select") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${options.map(option => `<option value="${option}">${option}</option>`).join("")}</select></label>`;
-          if (type === "salesman") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${salesmen.map(user => `<option value="${user.id}" ${user.id === state.user.id ? "selected" : ""}>${user.name}</option>`).join("")}</select></label>`;
+          if (type === "salesman") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${salesmen.length ? salesmen.map(user => `<option value="${user.id}" ${user.id === state.user.id ? "selected" : ""}>${user.name}</option>`).join("") : `<option value="">Create salesman first</option>`}</select></label>`;
           return `<label>${label}${required ? " *" : ""}<input name="${name}" type="${type}" ${req}></label>`;
         }).join("")}
         <div class="lead-ai-assist span-2">
@@ -984,11 +1005,8 @@ Object.defineProperty(pages.dashboard, "title", { get() { return state.user?.rol
 
 async function start() {
   const demo = bootParams.get("demo");
-  if (demo && !state.token) {
-    const creds = demo === "salesman"
-      ? ["john@alrassteel.com", "sales123"]
-      : ["admin@alrassteel.com", "admin123"];
-    await login(creds[0], creds[1]);
+  if (demo === "admin" && !state.token) {
+    await login("glory@alrassteel.com", "glory12345");
     return;
   }
   await bootstrap();

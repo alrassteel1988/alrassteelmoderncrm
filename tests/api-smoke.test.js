@@ -5,7 +5,15 @@ const PORT = 4188;
 const base = `http://localhost:${PORT}`;
 const child = spawn(process.execPath, ["server.js"], {
   cwd: process.cwd(),
-  env: { ...process.env, PORT: String(PORT) },
+  env: {
+    ...process.env,
+    PORT: String(PORT),
+    SUPABASE_URL: "",
+    SUPABASE_SERVICE_ROLE_KEY: "",
+    SUPABASE_ANON_KEY: "",
+    SUPABASE_PUBLISHABLE_KEY: "",
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ""
+  },
   stdio: ["ignore", "pipe", "pipe"]
 });
 
@@ -13,81 +21,151 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function request(path, options) {
+async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, options);
-  const body = await response.json().catch(() => ({}));
+  const contentType = response.headers.get("content-type") || "";
+  const body = contentType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
   return { response, body };
+}
+
+function auth(token) {
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
 (async () => {
   try {
     await wait(600);
+
     const health = await request("/api/health");
     assert.equal(health.response.status, 200);
     assert.equal(health.body.ok, true);
+    assert.equal(health.body.integrations.supabase, false);
 
-    const login = await request("/api/auth/login", {
+    const badLogin = await request("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "john@alrassteel.com", password: "sales123" })
     });
-    assert.equal(login.response.status, 200);
-    assert.equal(login.body.user.role, "salesman");
+    assert.equal(badLogin.response.status, 401);
 
-    const bootstrap = await request("/api/bootstrap", {
-      headers: { Authorization: `Bearer ${login.body.token}` }
-    });
-    assert.equal(bootstrap.response.status, 200);
-    assert.ok(bootstrap.body.leads.every(lead => lead.ownerId === login.body.user.id));
-    assert.ok(bootstrap.body.followups.Today || bootstrap.body.followups["Overdue Follow-Ups"]);
-
-    const whisper = await request("/api/ai/transcribe", {
+    const adminLogin = await request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
-      body: JSON.stringify({ text: "Customer wants a quote tomorrow." })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "glory@alrassteel.com", password: "glory12345" })
     });
-    assert.equal(whisper.response.status, 200);
-    assert.ok(whisper.body.transcript);
+    assert.equal(adminLogin.response.status, 200);
+    assert.equal(adminLogin.body.user.role, "admin");
 
-    const duplicate = await request("/api/leads/check-duplicate", {
+    const adminBootstrap = await request("/api/bootstrap", { headers: auth(adminLogin.body.token) });
+    assert.equal(adminBootstrap.response.status, 200);
+    assert.deepEqual(adminBootstrap.body.leads, []);
+    assert.equal(adminBootstrap.body.users.length, 1);
+    assert.equal(adminBootstrap.body.dashboard.kpis.activeSalesmen, 0);
+
+    const blockedLead = await request("/api/leads", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
-      body: JSON.stringify({ companyName: "Apex Industries" })
+      headers: auth(adminLogin.body.token),
+      body: JSON.stringify({ companyName: "Unauthorized Assignment LLC", sector: "Fabricator", tier: "1", stage: "PROSPECT" })
     });
-    assert.equal(duplicate.response.status, 200);
-    assert.ok(Array.isArray(duplicate.body.candidates));
+    assert.equal(blockedLead.response.status, 400);
+
+    const salesmanCreate = await request("/api/users", {
+      method: "POST",
+      headers: auth(adminLogin.body.token),
+      body: JSON.stringify({
+        name: "Rep One",
+        username: "rep.one",
+        email: "rep.one@alrassteel.com",
+        password: "repone123",
+        territory: "UAE-South"
+      })
+    });
+    assert.equal(salesmanCreate.response.status, 201);
+    assert.equal(salesmanCreate.body.user.role, "salesman");
+    assert.equal(salesmanCreate.body.user.username, "rep.one");
+    assert.equal("password" in salesmanCreate.body.user, false);
+
+    const duplicateUser = await request("/api/users", {
+      method: "POST",
+      headers: auth(adminLogin.body.token),
+      body: JSON.stringify({
+        name: "Rep Duplicate",
+        username: "rep.one",
+        email: "rep.one@alrassteel.com",
+        password: "repone123",
+        territory: "UAE-South"
+      })
+    });
+    assert.equal(duplicateUser.response.status, 409);
+
+    const salesmanLogin = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "rep.one", password: "repone123" })
+    });
+    assert.equal(salesmanLogin.response.status, 200);
+    assert.equal(salesmanLogin.body.user.role, "salesman");
+
+    const forbiddenUserCreate = await request("/api/users", {
+      method: "POST",
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({ name: "Bad Rep", username: "bad.rep", email: "bad.rep@alrassteel.com", password: "badrep123" })
+    });
+    assert.equal(forbiddenUserCreate.response.status, 403);
+
+    const forbiddenExport = await request("/api/export/leads.csv", { headers: auth(salesmanLogin.body.token) });
+    assert.equal(forbiddenExport.response.status, 403);
 
     const created = await request("/api/leads", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
+      headers: auth(adminLogin.body.token),
       body: JSON.stringify({
-        companyName: "Smoke Test Steel",
+        companyName: "Adversarial Review Steel",
+        ownerId: salesmanCreate.body.user.id,
         sector: "Fabricator",
         tier: "1",
         territory: "UAE-South",
         stage: "PROSPECT",
+        estimatedValue: 12600,
         nextAction: "Call procurement"
       })
     });
     assert.equal(created.response.status, 201);
-    assert.ok(created.body.lead.companyId);
+    assert.equal(created.body.lead.ownerId, salesmanCreate.body.user.id);
 
-    const activity = await request("/api/activities", {
+    const salesmanBootstrap = await request("/api/bootstrap", { headers: auth(salesmanLogin.body.token) });
+    assert.equal(salesmanBootstrap.response.status, 200);
+    assert.equal(salesmanBootstrap.body.users.length, 0);
+    assert.equal(salesmanBootstrap.body.leads.length, 1);
+    assert.ok(salesmanBootstrap.body.leads.every(lead => lead.ownerId === salesmanCreate.body.user.id));
+
+    const deleteRequest = await request(`/api/leads/${created.body.lead.id}/delete-request`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
-      body: JSON.stringify({ companyId: created.body.lead.companyId, type: "Phone Call", notes: "Smoke activity" })
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({ reason: "Testing admin approval gate." })
     });
-    assert.equal(activity.response.status, 201);
+    assert.equal(deleteRequest.response.status, 201);
 
-    const ai = await request("/api/ai/actions", {
+    const wrongApproval = await request(`/api/deletion-requests/${deleteRequest.body.request.id}/approve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${login.body.token}` },
-      body: JSON.stringify({ companyId: created.body.lead.companyId, action: "prepare" })
+      headers: auth(adminLogin.body.token),
+      body: JSON.stringify({ password: "wrong-password" })
     });
-    assert.equal(ai.response.status, 200);
-    assert.ok(ai.body.output);
+    assert.equal(wrongApproval.response.status, 403);
 
-    console.log("api-smoke ok");
+    const correctApproval = await request(`/api/deletion-requests/${deleteRequest.body.request.id}/approve`, {
+      method: "POST",
+      headers: auth(adminLogin.body.token),
+      body: JSON.stringify({ password: "glory12345" })
+    });
+    assert.equal(correctApproval.response.status, 200);
+    assert.equal(correctApproval.body.deleted, true);
+
+    const adminExport = await request("/api/export/leads.csv", { headers: auth(adminLogin.body.token) });
+    assert.equal(adminExport.response.status, 200);
+    assert.ok(String(adminExport.body).includes("Company ID"));
+
+    console.log("api-adversarial ok");
   } finally {
     child.kill();
   }

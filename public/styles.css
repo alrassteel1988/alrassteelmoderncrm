@@ -1088,6 +1088,22 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
 .bubble.mine { align-self: flex-end; color: #fff; background: linear-gradient(110deg, var(--green), var(--violet)); border: 0; }
 .chat input { margin-top: auto; border: 1px solid var(--line); border-radius: 14px; height: 50px; padding: 0 24px; }
 .settings-grid { display: grid; grid-template-columns: 310px 1fr; gap: 30px; margin-bottom: 30px; }
+.settings-grid .panel h2,
+.integration-panel h2 {
+  font-family: var(--font-main);
+  color: #172033;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+.settings-grid .panel p,
+.integration-output {
+  font-family: var(--font-main);
+  color: #526073;
+  font-weight: 500;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
 .menu { display: grid; gap: 16px; align-content: start; }
 .menu button {
   border: 1px solid var(--line);
@@ -1095,10 +1111,23 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   background: #f8faff;
   text-align: left;
   padding: 13px 26px;
-  font-weight: 900;
+  color: #172033;
+  font-family: var(--font-main);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 .menu .active { color: #fff; background: linear-gradient(110deg, var(--violet), var(--blue)); }
 .switch-row { display: grid; grid-template-columns: 1fr 62px; align-items: center; margin: 22px 0; }
+.switch-row b {
+  color: #172033;
+  font-family: var(--font-main);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
 .switch-row input { display: none; }
 .switch-row span { height: 27px; border-radius: 20px; background: #dfe7f5; position: relative; }
 .switch-row span::after { content: ""; position: absolute; width: 23px; height: 23px; right: 2px; top: 2px; background: #fff; border-radius: 50%; }
@@ -1141,9 +1170,14 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   background: #f8faff;
   border-radius: 12px;
   padding: 18px;
-  font-weight: 900;
+  color: #172033;
+  font-family: var(--font-main);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.25;
 }
-.integration-output { margin-top: 18px; padding: 18px; border-radius: 12px; background: #f8faff; color: var(--muted); }
+.integration-output { margin-top: 18px; padding: 18px; border-radius: 12px; background: #f8faff; color: #526073; }
 .modal-backdrop {
   position: fixed;
   inset: 0;

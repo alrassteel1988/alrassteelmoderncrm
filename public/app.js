@@ -14,6 +14,7 @@ const state = {
   duplicateCandidates: [],
   placeCandidates: [],
   placeAssistMessage: "",
+  leadFormKey: String(Date.now()),
   aiOutput: "",
   offlineQueue: JSON.parse(localStorage.getItem("arscrm:offlineQueue") || "[]")
 };
@@ -519,9 +520,7 @@ function bindCommon() {
   }));
   document.querySelector("[data-close-modal]")?.addEventListener("click", () => {
     state.showLeadForm = false;
-    state.duplicateCandidates = [];
-    state.placeCandidates = [];
-    state.placeAssistMessage = "";
+    resetLeadFormState();
     render();
   });
   document.querySelector("[data-close-lead-details]")?.addEventListener("click", () => {
@@ -900,12 +899,29 @@ function integrationPanel() {
   return `<article class="panel full integration-panel"><h2>AI & Data Integrations</h2><div class="integration-grid"><button data-ai-demo>Whisper AI Voice Note</button><button data-places-demo>Google Places Prospecting</button><button data-market-refresh>Market Intelligence Feed</button><button data-config-preview>Configuration Impact Preview</button></div><div id="integrationOutput" class="integration-output">Use the integration controls to preview live or fallback CRM intelligence.</div></article>`;
 }
 
-async function addLead() {
-  state.showLeadForm = true;
+function resetLeadFormState() {
   state.duplicateCandidates = [];
   state.placeCandidates = [];
   state.placeAssistMessage = "";
+  state.leadFormKey = String(Date.now());
+}
+
+function clearLeadFormAutofill() {
+  setTimeout(() => {
+    const form = document.querySelector("#leadForm");
+    if (!form) return;
+    form.querySelectorAll("input, textarea").forEach(field => {
+      field.value = "";
+      field.defaultValue = "";
+    });
+  }, 0);
+}
+
+async function addLead() {
+  state.showLeadForm = true;
+  resetLeadFormState();
   render();
+  clearLeadFormAutofill();
 }
 
 function renderLeadFormModal() {
@@ -922,15 +938,15 @@ function renderLeadFormModal() {
         ${placeAssist}
         <button data-close-modal title="Close">×</button>
       </div>
-      <form id="leadForm" class="lead-form-grid">
+      <form id="leadForm" class="lead-form-grid" autocomplete="off" data-form-key="${state.leadFormKey}">
         ${ARG_ADD_LEAD_FIELDS.map(([name, label, type, required, options]) => {
           const req = required ? "required" : "";
-          if (name === "companyName") return `<label>${label}${required ? " *" : ""}<input id="companyNameInput" name="${name}" type="${type}" ${req}></label>`;
-          if (name === "notes") return `<label class="span-2 ai-note-field"><span>${label}${required ? " *" : ""}</span><div class="note-tools"><button type="button" data-whisper-note>Record Note</button><small>Whisper detects the spoken language and inserts English notes.</small></div><textarea name="${name}" ${req}></textarea></label>`;
-          if (type === "textarea") return `<label class="span-2">${label}${required ? " *" : ""}<textarea name="${name}" ${req}></textarea></label>`;
+          if (name === "companyName") return `<label>${label}${required ? " *" : ""}<input id="companyNameInput" name="${name}" type="${type}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></label>`;
+          if (name === "notes") return `<label class="span-2 ai-note-field"><span>${label}${required ? " *" : ""}</span><div class="note-tools"><button type="button" data-whisper-note>Record Note</button><small>Whisper detects the spoken language and inserts English notes.</small></div><textarea name="${name}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></textarea></label>`;
+          if (type === "textarea") return `<label class="span-2">${label}${required ? " *" : ""}<textarea name="${name}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></textarea></label>`;
           if (type === "select") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${options.map(option => `<option value="${option}">${option}</option>`).join("")}</select></label>`;
           if (type === "salesman") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${salesmen.length ? salesmen.map(user => `<option value="${user.id}" ${user.id === state.user.id ? "selected" : ""}>${user.name}</option>`).join("") : `<option value="">Create salesman first</option>`}</select></label>`;
-          return `<label>${label}${required ? " *" : ""}<input name="${name}" type="${type}" ${req}></label>`;
+          return `<label>${label}${required ? " *" : ""}<input name="${name}" type="${type}" autocomplete="off" data-lpignore="true" data-1p-ignore ${req}></label>`;
         }).join("")}
         <div class="duplicate-box span-2">${state.duplicateCandidates.length ? `<b>Possible duplicate found</b>${state.duplicateCandidates.map(item => `<p>${item.companyName} · ${item.owner} · ${Math.round(item.score * 100)}% match</p>`).join("")}` : "Duplicate prevention is active. Type a company name to check existing records."}</div>
         <div class="modal-actions span-2"><button type="button" data-close-modal>Cancel</button><button class="primary" type="submit">Save Lead</button></div>
@@ -1071,9 +1087,7 @@ async function saveLeadForm(event) {
   try {
     const result = await api("/api/leads", { method: "POST", body: JSON.stringify(payload) });
     state.showLeadForm = false;
-    state.duplicateCandidates = [];
-    state.placeCandidates = [];
-    state.placeAssistMessage = "";
+    resetLeadFormState();
     state.notice = `${result.lead.companyName} saved as ${result.lead.companyId}.`;
     await bootstrap();
     state.selectedLeadId = result.lead.id;

@@ -5,6 +5,7 @@ const state = {
   data: null,
   selectedLeadId: null,
   selectedMessageId: "m1",
+  calendarMonth: localStorage.getItem("arscrm:calendarMonth") || "2026-06-01",
   search: "",
   notice: "",
   showLeadForm: false,
@@ -202,6 +203,51 @@ function activityTimeline(activities) {
       <p>${activity.notes || "No notes"}</p>
     </article>`;
   }).join("")}</div>`;
+}
+
+function monthDate(value = state.calendarMonth) {
+  const [year, month] = String(value || "2026-06-01").split("-").map(Number);
+  return new Date(year || 2026, Math.max(0, (month || 6) - 1), 1);
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function eventDate(event) {
+  const raw = event.date || event.day || event.at || event.nextActionDate || "";
+  const date = raw ? new Date(raw) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function eventsForMonth(events, date) {
+  return events.filter(event => {
+    const dateValue = eventDate(event);
+    return dateValue && dateValue.getFullYear() === date.getFullYear() && dateValue.getMonth() === date.getMonth();
+  });
+}
+
+function calendarGrid(date, monthEvents) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const leadingBlanks = (firstDay + 6) % 7;
+  const eventDays = new Map();
+  monthEvents.forEach(event => {
+    const dateValue = eventDate(event);
+    if (!dateValue) return;
+    const day = dateValue.getDate();
+    eventDays.set(day, (eventDays.get(day) || 0) + 1);
+  });
+  return [
+    ...Array.from({ length: leadingBlanks }, () => `<span class="calendar-empty"></span>`),
+    ...Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const count = eventDays.get(day) || 0;
+      return `<button type="button" title="${count ? `${count} activities` : "No activities"}"><span>${day}</span>${count ? `<i><small>${count}</small></i>` : ""}</button>`;
+    })
+  ].join("");
 }
 
 function leadDetailsContent(selected) {
@@ -686,14 +732,16 @@ const pages = {
     subtitle: "View meetings, demos, calls, follow-ups, and weekly sales schedule.",
     action: { id: "new-lead", label: "+ New Event" },
     render() {
-      const marked = state.data.events.map(event => Number(String(event.date || event.day || "").slice(-2))).filter(Boolean);
-      const eventsToday = state.data.events.length;
+      const visibleMonth = monthDate();
+      const monthEvents = eventsForMonth(state.data.events, visibleMonth);
+      const monthTitle = visibleMonth.toLocaleDateString([], { month: "long", year: "numeric" });
+      const eventsToday = monthEvents.length;
       return `${kpiCards([
         { label: "Events Today", value: eventsToday, delta: "" },
-        { label: "Demos", value: state.data.events.filter(event => event.type === "Demo").length, delta: "" },
-        { label: "Calls", value: state.data.events.filter(event => event.type === "Call").length, delta: "" },
-        { label: "Follow-ups", value: state.data.events.filter(event => event.type === "Follow-up").length, delta: "" }
-      ])}<section class="two-col strong-left"><article class="panel calendar"><h2>June 2026</h2><div class="weekdays">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => `<b>${day}</b>`).join("")}</div><div class="days">${Array.from({ length: 30 }, (_, i) => `<button><span>${i + 1}</span>${marked.includes(i + 1) ? "<i></i>" : ""}</button>`).join("")}</div></article><article class="panel">${table(["Time", "Meeting", "Type"], state.data.events.map(event => `<tr><td><b>${event.time}</b></td><td>${event.meeting}</td><td>${event.type}</td></tr>`))}</article></section>`;
+        { label: "Demos", value: monthEvents.filter(event => event.type === "Demo").length, delta: "" },
+        { label: "Calls", value: monthEvents.filter(event => event.type === "Call").length, delta: "" },
+        { label: "Follow-ups", value: monthEvents.filter(event => event.type === "Follow-up").length, delta: "" }
+      ])}<section class="two-col strong-left"><article class="panel calendar"><div class="calendar-head"><button type="button" data-calendar-nav="-1">Previous Month</button><h2>${monthTitle}</h2><button type="button" data-calendar-nav="1">Next Month</button></div><div class="weekdays">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => `<b>${day}</b>`).join("")}</div><div class="days">${calendarGrid(visibleMonth, monthEvents)}</div></article><article class="panel">${table(["Time", "Meeting", "Type"], monthEvents.map(event => `<tr><td><b>${event.time || displayDate(eventDate(event))}</b></td><td>${event.meeting || event.title || "Activity"}</td><td>${event.type || "Activity"}</td></tr>`), "No records")}</article></section>`;
     }
   },
   reports: {
@@ -1040,6 +1088,14 @@ document.addEventListener("click", async event => {
     await api(`/api/leads/${completeId}`, { method: "PATCH", body: JSON.stringify({ status: "Contacted", purpose: "Follow-up completed" }) });
     state.notice = "Follow-up marked complete.";
     await bootstrap();
+  }
+  const calendarNav = event.target.closest("[data-calendar-nav]")?.dataset.calendarNav;
+  if (calendarNav) {
+    const date = monthDate();
+    date.setMonth(date.getMonth() + Number(calendarNav));
+    state.calendarMonth = monthKey(date);
+    localStorage.setItem("arscrm:calendarMonth", state.calendarMonth);
+    render();
   }
   const deleteLeadId = event.target.closest("[data-delete-lead]")?.dataset.deleteLead;
   if (deleteLeadId) await requestLeadDeletion(deleteLeadId);

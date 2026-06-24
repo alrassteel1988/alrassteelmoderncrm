@@ -841,19 +841,66 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
 }
 .approval-list button:last-child { color: #b42318; }
 
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.calendar-head h2 {
+  margin: 0;
+  text-align: center;
+}
+.calendar-head button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8faff;
+  color: var(--green);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.calendar-head button:hover {
+  background: #e9f7f1;
+  border-color: rgba(29, 158, 117, .32);
+}
 .calendar .weekdays, .calendar .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; }
 .calendar .weekdays { margin-bottom: 18px; color: var(--muted); }
-.calendar .days button {
+.calendar .days button, .calendar-empty {
   height: 69px;
   border: 1px solid var(--line);
   border-radius: 10px;
+}
+.calendar .days button {
   background: #f8faff;
   text-align: left;
   padding: 10px;
   position: relative;
   font-weight: 900;
 }
-.calendar .days i { position: absolute; left: 10px; right: 10px; bottom: 16px; height: 14px; border-radius: 10px; background: linear-gradient(90deg, var(--green), var(--violet)); }
+.calendar-empty {
+  background: rgba(248, 250, 255, .42);
+  border-style: dashed;
+}
+.calendar .days i {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 16px;
+  height: 14px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--green), var(--violet));
+  display: grid;
+  place-items: center;
+}
+.calendar .days i small {
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
 .bar-chart {
   position: relative;
   height: 242px;
@@ -1292,6 +1339,8 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   .kpi-grid, .pipeline-row, .kanban, .calendar .weekdays, .calendar .days, .followups .bucket-grid, .integration-grid, .mini-kpis { grid-template-columns: 1fr; }
   .news-grid, .report-block-grid, .report-meter { grid-template-columns: 1fr; }
   .approval-list section, .user-create-form div { grid-template-columns: 1fr; }
+  .calendar-head { align-items: stretch; flex-direction: column; }
+  .calendar-head button { width: 100%; }
   .news-card { min-height: 0; }
   .lead-form-grid, .ai-actions, .mini-form { grid-template-columns: 1fr; }
   .lead-ai-assist { grid-template-columns: 1fr; }

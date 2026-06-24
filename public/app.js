@@ -8,6 +8,7 @@ const state = {
   search: "",
   notice: "",
   showLeadForm: false,
+  showLeadDetails: false,
   duplicateCandidates: [],
   placeCandidates: [],
   placeAssistMessage: "",
@@ -151,9 +152,9 @@ function leadTable(leads, selectedId) {
   const emptyRow = `<tr><td colspan="${headings.length}" class="empty-cell">No registered leads yet.</td></tr>`;
   const rows = leads.length ? leads.map(lead => {
     const activity = latestLeadActivity(lead);
-    return `<tr data-lead-id="${lead.id}" class="${selectedId === lead.id ? "selected" : ""}">
+    return `<tr class="${selectedId === lead.id ? "selected" : ""}">
       <td>${displayDate(lead.created)}</td>
-      <td class="company-cell">${displayValue(lead.companyName || lead.company)}</td>
+      <td class="company-cell"><button class="lead-link" data-open-lead="${lead.id}">${displayValue(lead.companyName || lead.company)}</button></td>
       <td>${displayValue(lead.contactPerson || lead.name)}</td>
       <td>${displayValue(lead.phone)}</td>
       <td>${displayValue(lead.sector)}</td>
@@ -199,6 +200,32 @@ function activityTimeline(activities) {
       <p>${activity.notes || "No notes"}</p>
     </article>`;
   }).join("")}</div>`;
+}
+
+function leadDetailsContent(selected) {
+  if (!selected) return "";
+  return `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} Â· ${selected.sector} Â· ${selected.territory}</p>${statusBadge(selected.status)}</div></div>
+    <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>Schedule</button><button data-delete-lead="${selected.id}">Request Delete</button></div>
+    <dl>${[["Primary Contact", selected.contactPerson], ["Title", selected.primaryTitle], ["Email", selected.email], ["Phone", selected.phone], ["Legal Name", selected.legalName], ["Country / Emirate", selected.countryEmirate], ["Tier", selected.tier], ["Website", selected.website], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${displayValue(value)}</dd>`).join("")}</dl>
+    <div class="score"><span>Relationship Health</span><strong>${selected.relationshipHealth} Â· ${selected.healthScore}/100</strong><i style="width:${selected.healthScore}%"></i><p>${selected.healthReason}</p></div>
+    <section class="ai-actions">${AI_ACTIONS.slice(0, state.user.role === "admin" ? 9 : 8).map(([id, label]) => `<button data-ai-action="${id}">${label}</button>`).join("")}</section>
+    ${state.aiOutput ? `<div class="ai-output">${state.aiOutput.replace(/\n/g, "<br>")}</div>` : ""}
+    <h3>Append-Only Activity</h3>
+    <form id="activityForm" class="mini-form"><select name="type">${["Phone Call", "Email", "In-Person Meeting", "Site Visit", "Video Call", "Quotation Sent", "Order Placed"].map(type => `<option>${type}</option>`).join("")}</select><input name="quotationRef" placeholder="Quotation ref"><textarea name="notes" placeholder="Activity notes" required></textarea><button>Log Activity</button></form>
+    <h3>Structured PMR</h3>
+    <form id="pmrForm" class="mini-form"><input name="meetingDate" type="date" required><input name="productsDiscussed" placeholder="Products discussed"><input name="competitorsMentioned" placeholder="Competitors mentioned"><input name="complianceRequirements" placeholder="ISO, ICV, DNV..."><select name="relationshipHeatScore">${[1,2,3,4,5].map(n => `<option>${n}</option>`).join("")}</select><select name="directorActionRequired">${["None", "Awareness only", "Attend next visit", "Direct contact"].map(x => `<option>${x}</option>`).join("")}</select><textarea name="notes" placeholder="PMR notes"></textarea><button>Save PMR</button></form>
+    <h3>Recent Activity</h3>${activityTimeline((state.data.activities || []).filter(activity => activity.companyId === selected.companyId))}`;
+}
+
+function renderLeadDetailsModal() {
+  const selected = state.data.leads.find(lead => lead.id === state.selectedLeadId);
+  if (!selected) return "";
+  return `<div class="modal-backdrop lead-details-backdrop">
+    <article class="modal lead-details-modal profile-card">
+      <button class="modal-close" type="button" data-close-lead-details aria-label="Close lead details">&times;</button>
+      ${leadDetailsContent(selected)}
+    </article>
+  </div>`;
 }
 
 async function api(path, options = {}) {
@@ -309,6 +336,7 @@ function render() {
       </main>
     </div>
     ${state.showLeadForm ? renderLeadFormModal() : ""}
+    ${state.showLeadDetails ? renderLeadDetailsModal() : ""}
   `;
   bindCommon();
   page.bind?.();
@@ -372,6 +400,11 @@ function bindCommon() {
     state.duplicateCandidates = [];
     state.placeCandidates = [];
     state.placeAssistMessage = "";
+    render();
+  });
+  document.querySelector("[data-close-lead-details]")?.addEventListener("click", () => {
+    state.showLeadDetails = false;
+    state.aiOutput = "";
     render();
   });
   document.querySelector("#leadForm")?.addEventListener("submit", saveLeadForm);
@@ -587,34 +620,14 @@ const pages = {
     action: { id: "new-lead", label: "+ Add Lead" },
     render() {
       const leads = filtered(state.data.leads, ["name", "company", "companyName", "contactPerson", "phone", "sector", "location", "territory", "countryEmirate", "status", "source", "nextAction"]);
-      const selected = leads.find(lead => lead.id === state.selectedLeadId) || leads[0] || state.data.leads[0];
-      state.selectedLeadId = selected?.id;
-      return `<section class="split-view">
+      return `<section class="lead-table-page">
         <article class="panel leads-list">
           <div class="panel-head"><h2>Leads List</h2><button>View All</button></div>
-          ${leadTable(leads, selected?.id)}
-        </article>
-        <article class="panel profile-card">
-          ${selected ? `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} · ${selected.sector} · ${selected.territory}</p>${statusBadge(selected.status)}</div></div>
-          <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>Schedule</button><button data-delete-lead="${selected.id}">Request Delete</button></div>
-          <dl>${[["Primary Contact", selected.contactPerson], ["Title", selected.primaryTitle], ["Email", selected.email], ["Phone", selected.phone], ["Legal Name", selected.legalName], ["Country / Emirate", selected.countryEmirate], ["Tier", selected.tier], ["Website", selected.website], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${value || "—"}</dd>`).join("")}</dl>
-          <div class="score"><span>Relationship Health</span><strong>${selected.relationshipHealth} · ${selected.healthScore}/100</strong><i style="width:${selected.healthScore}%"></i><p>${selected.healthReason}</p></div>
-          <section class="ai-actions">${AI_ACTIONS.slice(0, state.user.role === "admin" ? 9 : 8).map(([id, label]) => `<button data-ai-action="${id}">${label}</button>`).join("")}</section>
-          ${state.aiOutput ? `<div class="ai-output">${state.aiOutput.replace(/\n/g, "<br>")}</div>` : ""}
-          <h3>Append-Only Activity</h3>
-          <form id="activityForm" class="mini-form"><select name="type">${["Phone Call", "Email", "In-Person Meeting", "Site Visit", "Video Call", "Quotation Sent", "Order Placed"].map(type => `<option>${type}</option>`).join("")}</select><input name="quotationRef" placeholder="Quotation ref"><textarea name="notes" placeholder="Activity notes" required></textarea><button>Log Activity</button></form>
-          <h3>Structured PMR</h3>
-          <form id="pmrForm" class="mini-form"><input name="meetingDate" type="date" required><input name="productsDiscussed" placeholder="Products discussed"><input name="competitorsMentioned" placeholder="Competitors mentioned"><input name="complianceRequirements" placeholder="ISO, ICV, DNV..."><select name="relationshipHeatScore">${[1,2,3,4,5].map(n => `<option>${n}</option>`).join("")}</select><select name="directorActionRequired">${["None", "Awareness only", "Attend next visit", "Direct contact"].map(x => `<option>${x}</option>`).join("")}</select><textarea name="notes" placeholder="PMR notes"></textarea><button>Save PMR</button></form>
-          <h3>Recent Activity</h3>${activityTimeline((state.data.activities || []).filter(activity => activity.companyId === selected.companyId))}` : ""}
+          ${leadTable(leads, state.showLeadDetails ? state.selectedLeadId : null)}
         </article>
       </section>`;
     },
-    bind() {
-      document.querySelectorAll("[data-lead-id]").forEach(row => row.addEventListener("click", () => {
-        state.selectedLeadId = row.dataset.leadId;
-        render();
-      }));
-    }
+    bind() {}
   },
   contacts: {
     title: "Contacts",
@@ -1015,7 +1028,10 @@ document.addEventListener("click", async event => {
   const leadId = event.target.closest("[data-open-lead]")?.dataset.openLead;
   if (leadId) {
     state.selectedLeadId = leadId;
-    setRoute("leads");
+    state.showLeadDetails = true;
+    state.route = "leads";
+    localStorage.setItem("arscrm:route", "leads");
+    render();
   }
   const completeId = event.target.closest("[data-complete]")?.dataset.complete;
   if (completeId) {

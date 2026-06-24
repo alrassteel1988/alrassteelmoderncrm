@@ -383,6 +383,10 @@ tr.selected td { background: #f4f7ff; }
 tbody tr { cursor: default; }
 
 .split-view { display: grid; grid-template-columns: 1.1fr .78fr; gap: 30px; }
+.lead-table-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
 .leads-list { overflow: hidden; }
 .lead-table-wrap {
   overflow-x: auto;
@@ -422,7 +426,7 @@ tbody tr { cursor: default; }
   background: rgba(255, 255, 255, .62);
 }
 .leads-table tbody tr {
-  cursor: pointer;
+  cursor: default;
   transition: background .18s ease, box-shadow .18s ease;
 }
 .leads-table tbody tr:hover td,
@@ -435,6 +439,28 @@ tbody tr { cursor: default; }
 .leads-table .company-cell {
   color: #111827;
   font-weight: 700;
+}
+.lead-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #102034;
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: color .18s ease, text-decoration-color .18s ease;
+}
+.lead-link:hover,
+.lead-link:focus-visible {
+  color: var(--green);
+  text-decoration-color: currentColor;
+  outline: 0;
 }
 .leads-table .empty-cell {
   color: #64748b;
@@ -937,6 +963,28 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   border-radius: 18px;
   box-shadow: 0 30px 80px rgba(9, 15, 36, 0.28);
   padding: 24px;
+}
+.lead-details-modal {
+  position: relative;
+  width: min(1120px, 100%);
+  padding: 40px;
+}
+.lead-details-modal .modal-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  background: #f8faff;
+  border-radius: 10px;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1;
+}
+.lead-details-modal .profile-hero {
+  padding-right: 52px;
 }
 .modal-head {
   display: grid;

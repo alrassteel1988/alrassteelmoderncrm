@@ -204,7 +204,7 @@ function exportableLeads() {
 }
 
 function leadsCsv() {
-  const headers = ["Company ID", "Company Name", "Contact", "Email", "Phone", "Status", "Sector", "Territory", "Owner", "Estimated Value", "Created", "Next Action", "Notes"];
+  const headers = ["Company ID", "Company Name", "Contact", "Email", "Phone", "Status", "Sector", "Territory", "Owner", "Estimated Value (AED)", "Created", "Next Action", "Notes"];
   const rows = exportableLeads().map(lead => [
     lead.companyId,
     lead.companyName,
@@ -227,8 +227,12 @@ function pdfEscape(value) {
   return String(value ?? "").replace(/[\\()]/g, "\\$&").replace(/\r?\n/g, " ");
 }
 
+function currencyLabel(value) {
+  return `AED ${Number(value || 0).toLocaleString()}`;
+}
+
 function simpleLeadsPdf() {
-  const lines = ["Al Ras Steel Leads Export", `Generated ${new Date().toISOString()}`, "", ...exportableLeads().slice(0, 60).map(lead => `${lead.companyId}  ${lead.companyName}  ${lead.status}  ${money(lead.estimatedValue || lead.value)}  ${ownerNameServer(lead.ownerId)}`)];
+  const lines = ["Al Ras Steel Leads Export", `Generated ${new Date().toISOString()}`, "", ...exportableLeads().slice(0, 60).map(lead => `${lead.companyId}  ${lead.companyName}  ${lead.status}  ${currencyLabel(lead.estimatedValue || lead.value)}  ${ownerNameServer(lead.ownerId)}`)];
   const content = ["BT", "/F1 12 Tf", "50 790 Td", "14 TL", ...lines.map((line, index) => `${index ? "T*" : ""} (${pdfEscape(line).slice(0, 95)}) Tj`), "ET"].join("\n");
   const objects = [
     "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",

@@ -84,7 +84,8 @@ const nav = [
   ["settings", "Settings", "⚙"]
 ];
 
-const money = value => `$${Number(value || 0).toLocaleString()}`;
+const money = value => `AED ${Number(value || 0).toLocaleString()}`;
+const compactMoney = value => `AED ${Number(value || 0).toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })}`;
 const pct = value => `${Number(value || 0).toLocaleString()}%`;
 const el = selector => document.querySelector(selector);
 const ownerName = id => state.data?.users?.find(user => user.id === id)?.name || (id === state.user?.id ? state.user.name : "John Smith");
@@ -466,7 +467,7 @@ const pages = {
       const isAdmin = state.user.role === "admin";
       const salesOverviewCard = `<article class="panel sales-overview ${isAdmin ? "compact-chart" : "wide"}"><h2>${isAdmin ? "Sales Overview" : "My Sales Performance"}</h2><div class="metric-line"><strong>${money(d.kpis.revenue)}</strong><em>↑ 18.6% this month</em></div>${lineChart(d.salesTrend)}</article>`;
       const pipelineCard = `<article class="panel pipeline ${isAdmin ? "wide" : ""}"><h2>${isAdmin ? "Customer Pipeline" : "My Pipeline"}</h2><div class="pipeline-row">${d.pipeline.map(stage => `<div><b class="${stage.stage.toLowerCase()}">${statusMeta(stage.stage).label}</b><strong>${money(stage.value)}</strong><small>${stage.count} accounts</small><button data-route="deals">View Deals</button></div>`).join("")}</div></article>`;
-      const quotaCard = `<article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of $115k</span></div><footer><b>$78,450 achieved</b><span>$36,550 to go</span></footer></article>`;
+      const quotaCard = `<article class="panel donut-panel"><h2>Quota Progress</h2><div class="donut" style="--pct:67"><strong>67%</strong><span>of ${compactMoney(115000)}</span></div><footer><b>${money(78450)} achieved</b><span>${money(36550)} to go</span></footer></article>`;
       const primaryCards = isAdmin ? `${pipelineCard}${quotaCard}${salesOverviewCard}` : `${salesOverviewCard}${quotaCard}${pipelineCard}`;
       return `
         ${dashboardNewsStrip()}
@@ -584,11 +585,11 @@ const pages = {
     action: { id: "export", label: "Export Report" },
     render() {
       return `${kpiCards([
-        { label: "Revenue", value: "$248k", delta: "18.6%" },
+        { label: "Revenue", value: compactMoney(248000), delta: "18.6%" },
         { label: "Conversion", value: "26.8%", delta: "6.1%" },
         { label: "Lead Sources", value: 8, delta: "4.4%" },
         { label: "Team Activity", value: "1,204", delta: "9.7%" }
-      ])}<section class="two-col"><article class="panel"><h2>Revenue Performance</h2><strong class="large">$248,680</strong>${lineChart([42, 58, 51, 80, 65, 94, 76, 110])}</article><article class="panel"><h2>Lead Source Breakdown</h2>${barChart([{ label: "Jan", value: 42 }, { label: "Feb", value: 60 }, { label: "Mar", value: 48 }, { label: "Apr", value: 78 }, { label: "May", value: 68 }, { label: "Jun", value: 96 }])}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], [["Alex Rivera", 18, "$78,450", "28%"], ["John Smith", 15, "$62,300", "24%"], ["Sarah Chen", 13, "$55,200", "22%"], ["David Lee", 10, "$41,700", "19%"]].map(row => `<tr>${row.map((cell, i) => `<td>${i === 0 ? `<b>${cell}</b>` : cell}</td>`).join("")}</tr>`))}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`))}</article></section>`;
+      ])}<section class="two-col"><article class="panel"><h2>Revenue Performance</h2><strong class="large">${money(248680)}</strong>${lineChart([42, 58, 51, 80, 65, 94, 76, 110])}</article><article class="panel"><h2>Lead Source Breakdown</h2>${barChart([{ label: "Jan", value: 42 }, { label: "Feb", value: 60 }, { label: "Mar", value: 48 }, { label: "Apr", value: 78 }, { label: "May", value: 68 }, { label: "Jun", value: 96 }])}</article></section><section class="two-col"><article class="panel">${table(["Name", "Deals", "Revenue", "Win Rate"], [["Alex Rivera", 18, money(78450), "28%"], ["John Smith", 15, money(62300), "24%"], ["Sarah Chen", 13, money(55200), "22%"], ["David Lee", 10, money(41700), "19%"]].map(row => `<tr>${row.map((cell, i) => `<td>${i === 0 ? `<b>${cell}</b>` : cell}</td>`).join("")}</tr>`))}</article><article class="panel">${table(["Report", "Owner", "Updated", "Status"], state.data.reports.map(report => `<tr><td><b>${report.report}</b></td><td>${report.owner}</td><td>${report.updated}</td><td>${report.status}</td></tr>`))}</article></section>`;
     }
   },
   messages: {

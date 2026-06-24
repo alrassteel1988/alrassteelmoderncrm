@@ -832,9 +832,10 @@ dd { margin: 0; font-weight: 900; }
   padding: 24px;
 }
 .modal-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 460px) 40px;
+  align-items: start;
+  gap: 16px;
   margin-bottom: 18px;
 }
 .modal-head h2 { margin: 0 0 5px; }
@@ -914,12 +915,17 @@ dd { margin: 0; font-weight: 900; }
 .lead-ai-assist {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 14px;
-  align-items: start;
+  gap: 10px;
+  align-items: center;
   background: #f3fbf8;
   border: 1px solid #cceee3;
   border-radius: 14px;
-  padding: 14px;
+  padding: 12px;
+}
+.modal-head .lead-ai-assist {
+  justify-self: end;
+  width: 100%;
+  max-width: 460px;
 }
 .lead-ai-assist p, .note-tools small { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .lead-ai-assist > button, .note-tools button {
@@ -1047,6 +1053,19 @@ dd { margin: 0; font-weight: 900; }
   .topbar { flex-direction: column; margin-bottom: 30px; }
   .top-actions { width: 100%; flex-wrap: wrap; }
   .top-actions input { width: min(100%, 420px); }
+  .lead-modal .modal-head {
+    grid-template-columns: 1fr 40px;
+  }
+  .lead-modal .modal-head .lead-ai-assist {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    max-width: none;
+  }
+  .lead-modal .modal-head > button {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 
 @media (max-width: 720px) {

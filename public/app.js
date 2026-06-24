@@ -717,10 +717,16 @@ async function addLead() {
 
 function renderLeadFormModal() {
   const salesmen = (state.data.users?.length ? state.data.users : [state.user]).filter(user => user.role !== "admin");
+  const placeAssist = `<div class="lead-ai-assist">
+    <div><b>Google Maps AI assistance</b><p>${state.placeAssistMessage || "Enter a company name, then fetch possible Google Maps matches to auto-fill this form."}</p></div>
+    <button type="button" data-enrich-lead>Fetch company data</button>
+    ${state.placeCandidates.length ? `<div class="place-candidates">${state.placeCandidates.map(place => `<button type="button" data-place-id="${place.place_id}"><b>${place.name}</b><span>${place.formatted_address || place.address || ""}</span><small>${place.rating ? `Rating ${place.rating}` : "Google Maps result"}</small></button>`).join("")}</div>` : ""}
+  </div>`;
   return `<div class="modal-backdrop">
     <section class="modal lead-modal">
       <div class="modal-head">
         <div><h2>Add New Lead</h2><p>Create once. Salespeople can access it from web or mobile.</p></div>
+        ${placeAssist}
         <button data-close-modal title="Close">×</button>
       </div>
       <form id="leadForm" class="lead-form-grid">
@@ -733,11 +739,6 @@ function renderLeadFormModal() {
           if (type === "salesman") return `<label>${label}${required ? " *" : ""}<select name="${name}" ${req}>${salesmen.length ? salesmen.map(user => `<option value="${user.id}" ${user.id === state.user.id ? "selected" : ""}>${user.name}</option>`).join("") : `<option value="">Create salesman first</option>`}</select></label>`;
           return `<label>${label}${required ? " *" : ""}<input name="${name}" type="${type}" ${req}></label>`;
         }).join("")}
-        <div class="lead-ai-assist span-2">
-          <div><b>Google Maps AI assistance</b><p>${state.placeAssistMessage || "Enter a company name, then fetch possible Google Maps matches to auto-fill this form."}</p></div>
-          <button type="button" data-enrich-lead>Fetch company data</button>
-          ${state.placeCandidates.length ? `<div class="place-candidates">${state.placeCandidates.map(place => `<button type="button" data-place-id="${place.place_id}"><b>${place.name}</b><span>${place.formatted_address || place.address || ""}</span><small>${place.rating ? `Rating ${place.rating}` : "Google Maps result"}</small></button>`).join("")}</div>` : ""}
-        </div>
         <div class="duplicate-box span-2">${state.duplicateCandidates.length ? `<b>Possible duplicate found</b>${state.duplicateCandidates.map(item => `<p>${item.companyName} · ${item.owner} · ${Math.round(item.score * 100)}% match</p>`).join("")}` : "Duplicate prevention is active. Type a company name to check existing records."}</div>
         <div class="modal-actions span-2"><button type="button" data-close-modal>Cancel</button><button class="primary" type="submit">Save Lead</button></div>
       </form>

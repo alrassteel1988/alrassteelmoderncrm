@@ -146,6 +146,12 @@ function leadCreatedTime(lead) {
   return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
 }
 
+function leadTableLocation(lead, showSalesman) {
+  return showSalesman
+    ? lead.countryEmirate || lead.territory || lead.location
+    : lead.location || lead.territory || lead.countryEmirate;
+}
+
 function leadTable(leads, selectedId, { showSalesman = false } = {}) {
   const headings = [
     "DATE CREATED",
@@ -169,7 +175,7 @@ function leadTable(leads, selectedId, { showSalesman = false } = {}) {
       <td>${displayValue(lead.phone)}</td>
       ${showSalesman ? `<td>${displayValue(ownerName(lead.ownerId))}</td>` : ""}
       <td>${displayValue(lead.sector)}</td>
-      <td>${displayValue(lead.location || lead.territory || lead.countryEmirate)}</td>
+      <td>${displayValue(leadTableLocation(lead, showSalesman))}</td>
       <td>${displayDate(activity?.at || lead.lastActivityDate)}</td>
       <td>${displayValue(activity?.notes || activity?.type)}</td>
       <td>${displayValue(lead.nextAction || lead.nextActionDate)}</td>
@@ -358,7 +364,7 @@ function uniqueLeadValues(leads, getter) {
 function adminLeadFilters(leads) {
   if (state.user?.role !== "admin") return "";
   const salesmen = (state.data.users || []).filter(user => user.role !== "admin");
-  const locations = uniqueLeadValues(leads, lead => lead.location || lead.territory || lead.countryEmirate);
+  const locations = uniqueLeadValues(leads, lead => lead.countryEmirate || lead.territory || lead.location);
   const sectors = uniqueLeadValues(leads, lead => lead.sector);
   return `<div class="lead-filter-bar">
     <label>Salesman<select data-lead-filter="ownerId"><option value="">All salesmen</option>${salesmen.map(user => `<option value="${user.id}" ${state.leadFilters.ownerId === user.id ? "selected" : ""}>${user.name}</option>`).join("")}</select></label>
@@ -370,7 +376,7 @@ function adminLeadFilters(leads) {
 function applyAdminLeadFilters(leads) {
   if (state.user?.role !== "admin") return leads;
   return leads.filter(lead => {
-    const location = lead.location || lead.territory || lead.countryEmirate || "";
+    const location = lead.countryEmirate || lead.territory || lead.location || "";
     return (!state.leadFilters.ownerId || lead.ownerId === state.leadFilters.ownerId)
       && (!state.leadFilters.location || location === state.leadFilters.location)
       && (!state.leadFilters.sector || lead.sector === state.leadFilters.sector);

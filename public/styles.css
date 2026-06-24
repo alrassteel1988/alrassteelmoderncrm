@@ -141,6 +141,34 @@ button { cursor: pointer; }
   background: #fff;
   box-shadow: 0 10px 28px rgba(57, 74, 122, 0.08);
 }
+.export-btn {
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--green);
+  padding: 0 13px;
+  font-weight: 900;
+}
+.export-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8faff;
+  padding: 4px 5px 4px 12px;
+}
+.export-group span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.export-group .export-btn {
+  height: 32px;
+  box-shadow: none;
+}
 .primary {
   border: 0;
   color: #fff;
@@ -577,6 +605,38 @@ dd { margin: 0; font-weight: 900; }
   font-weight: 900;
 }
 .director-queue { margin-top: 12px; border-left: 4px solid var(--orange); }
+.approval-panel { margin-bottom: 24px; border-left: 4px solid var(--orange); }
+.approval-panel .panel-head span {
+  color: var(--orange);
+  font-size: 12px;
+  font-weight: 900;
+}
+.approval-list {
+  display: grid;
+  gap: 10px;
+}
+.approval-list section {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: center;
+  background: #f8faff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px;
+}
+.approval-list p { margin: 5px 0; }
+.approval-list small { color: var(--muted); }
+.approval-list section > div:last-child { display: flex; gap: 8px; }
+.approval-list button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--green);
+  padding: 9px 12px;
+  font-weight: 900;
+}
+.approval-list button:last-child { color: #b42318; }
 
 .calendar .weekdays, .calendar .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; }
 .calendar .weekdays { margin-bottom: 18px; color: var(--muted); }
@@ -616,6 +676,38 @@ dd { margin: 0; font-weight: 900; }
 .switch-row span { height: 27px; border-radius: 20px; background: #dfe7f5; position: relative; }
 .switch-row span::after { content: ""; position: absolute; width: 23px; height: 23px; right: 2px; top: 2px; background: #fff; border-radius: 50%; }
 .switch-row input:checked + span { background: var(--green); }
+.user-create-form {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8faff;
+}
+.user-create-form h2 { margin-bottom: 0; }
+.user-create-form p { margin: 0; }
+.user-create-form div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.user-create-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.user-create-form input, .user-create-form select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  min-height: 42px;
+  padding: 10px 12px;
+}
+.user-create-form button { justify-self: start; }
 .integration-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .integration-grid button {
   border: 1px solid var(--line);
@@ -857,6 +949,7 @@ dd { margin: 0; font-weight: 900; }
   .primary { width: 100%; }
   .kpi-grid, .pipeline-row, .kanban, .calendar .weekdays, .calendar .days, .followups .bucket-grid, .integration-grid, .mini-kpis { grid-template-columns: 1fr; }
   .news-grid, .report-block-grid, .report-meter { grid-template-columns: 1fr; }
+  .approval-list section, .user-create-form div { grid-template-columns: 1fr; }
   .news-card { min-height: 0; }
   .lead-form-grid, .ai-actions, .mini-form { grid-template-columns: 1fr; }
   .lead-ai-assist { grid-template-columns: 1fr; }

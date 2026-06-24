@@ -36,11 +36,13 @@ function loadLocalEnv() {
 }
 
 const users = [
-  { id: "u-admin", name: "Alex Rivera", email: "admin@alrassteel.com", password: "admin123", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" },
+  { id: "u-admin", name: "Glory", email: "glory@alrassteel.com", password: "glory12345", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" },
   { id: "u-sales-1", name: "John Smith", email: "john@alrassteel.com", password: "sales123", role: "salesman", title: "Salesman", access: "Assigned Territory", status: "Active", territory: "UAE-South" },
   { id: "u-sales-2", name: "Sarah Chen", email: "sarah@alrassteel.com", password: "sales123", role: "salesman", title: "Saleswoman", access: "Assigned Territory", status: "Active", territory: "UAE-North" },
   { id: "u-sales-3", name: "David Lee", email: "david@alrassteel.com", password: "sales123", role: "salesman", title: "Salesman", access: "Assigned Territory", status: "Pending", territory: "Mixed" }
 ];
+
+const deletionRequests = [];
 
 const now = new Date("2026-06-23T09:00:00+04:00");
 
@@ -186,6 +188,70 @@ function send(res, status, payload, headers = {}) {
   const body = JSON.stringify(payload);
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body), ...headers });
   res.end(body);
+}
+
+function sendText(res, status, body, headers = {}) {
+  res.writeHead(status, { "Content-Length": Buffer.byteLength(body), ...headers });
+  res.end(body);
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function exportableLeads() {
+  return leads.map(decorateLead);
+}
+
+function leadsCsv() {
+  const headers = ["Company ID", "Company Name", "Contact", "Email", "Phone", "Status", "Sector", "Territory", "Owner", "Estimated Value", "Created", "Next Action", "Notes"];
+  const rows = exportableLeads().map(lead => [
+    lead.companyId,
+    lead.companyName,
+    lead.contactPerson,
+    lead.email,
+    lead.phone,
+    lead.status,
+    lead.sector,
+    lead.territory,
+    users.find(user => user.id === lead.ownerId)?.name || "",
+    lead.estimatedValue || lead.value,
+    lead.created,
+    lead.nextAction,
+    Array.isArray(lead.notes) ? lead.notes.join(" | ") : lead.notes
+  ]);
+  return [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function pdfEscape(value) {
+  return String(value ?? "").replace(/[\\()]/g, "\\$&").replace(/\r?\n/g, " ");
+}
+
+function simpleLeadsPdf() {
+  const lines = ["Al Ras Steel Leads Export", `Generated ${new Date().toISOString()}`, "", ...exportableLeads().slice(0, 60).map(lead => `${lead.companyId}  ${lead.companyName}  ${lead.status}  ${money(lead.estimatedValue || lead.value)}  ${ownerNameServer(lead.ownerId)}`)];
+  const content = ["BT", "/F1 12 Tf", "50 790 Td", "14 TL", ...lines.map((line, index) => `${index ? "T*" : ""} (${pdfEscape(line).slice(0, 95)}) Tj`), "ET"].join("\n");
+  const objects = [
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
+    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+    `5 0 obj << /Length ${Buffer.byteLength(content)} >> stream\n${content}\nendstream endobj`
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${obj}\n`;
+  }
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return pdf;
+}
+
+function ownerNameServer(id) {
+  return users.find(user => user.id === id)?.name || "Unassigned";
 }
 
 function readBody(req) {
@@ -728,9 +794,47 @@ async function handleApi(req, res) {
       weeklyReport: weeklyReportFor(user),
       activities: activities.filter(activity => scopedLeads.some(lead => lead.companyId === activity.companyId || lead.id === activity.leadId)),
       pmrs: pmrs.filter(pmr => scopedLeads.some(lead => lead.companyId === pmr.companyId || lead.id === pmr.leadId)),
+      deletionRequests: user.role === "admin" ? deletionRequests.filter(request => request.status === "Pending") : deletionRequests.filter(request => request.requestedBy === user.id),
       configAudit: user.role === "admin" ? configAudit : [],
       meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, sync: supabaseSync } }
     });
+  }
+  if (req.method === "GET" && url.pathname === "/api/export/leads.csv") {
+    if (user.role !== "admin") return send(res, 403, { error: "Admin access required for lead export." });
+    return sendText(res, 200, leadsCsv(), {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="al-ras-steel-leads.csv"'
+    });
+  }
+  if (req.method === "GET" && url.pathname === "/api/export/leads.pdf") {
+    if (user.role !== "admin") return send(res, 403, { error: "Admin access required for lead export." });
+    return sendText(res, 200, simpleLeadsPdf(), {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="al-ras-steel-leads.pdf"'
+    });
+  }
+  if (req.method === "POST" && url.pathname === "/api/users") {
+    if (user.role !== "admin") return send(res, 403, { error: "Only admin can create salesman accounts." });
+    const body = await readBody(req);
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "").trim();
+    const name = String(body.name || "").trim();
+    if (!name || !email || !password) return send(res, 400, { error: "Name, email, and password are required." });
+    if (users.some(person => person.email.toLowerCase() === email)) return send(res, 409, { error: "A user with this email already exists." });
+    const salesman = {
+      id: `u-sales-${users.filter(person => person.role !== "admin").length + 1}`,
+      name,
+      email,
+      password,
+      role: "salesman",
+      title: body.title || "Salesman",
+      access: "Assigned Territory",
+      status: body.status || "Active",
+      territory: TERRITORIES.includes(body.territory) ? body.territory : "Mixed"
+    };
+    users.push(salesman);
+    const { password: _password, ...safe } = salesman;
+    return send(res, 201, { user: safe });
   }
   if (req.method === "POST" && url.pathname === "/api/leads/check-duplicate") {
     const body = await readBody(req);
@@ -806,6 +910,54 @@ async function handleApi(req, res) {
     const supabase = await persistLeadToSupabase(lead);
     await persistActivityToSupabase(activity);
     return send(res, 201, { lead: decorateLead(lead), duplicates: duplicateCandidates(companyName, user), supabase });
+  }
+  if (req.method === "POST" && url.pathname.match(/^\/api\/leads\/[^/]+\/delete-request$/)) {
+    const id = url.pathname.split("/")[3];
+    const lead = visibleLeads(user).find(item => item.id === id);
+    if (!lead) return send(res, 404, { error: "Lead not found." });
+    const existing = deletionRequests.find(request => request.leadId === id && request.status === "Pending");
+    if (existing) return send(res, 200, { request: existing, message: "Deletion request is already pending admin approval." });
+    const body = await readBody(req);
+    const request = {
+      id: `dr-${String(deletionRequests.length + 1).padStart(4, "0")}`,
+      leadId: lead.id,
+      companyId: lead.companyId,
+      companyName: lead.companyName,
+      requestedBy: user.id,
+      requestedByName: user.name,
+      reason: String(body.reason || "Salesman requested lead deletion.").trim(),
+      status: "Pending",
+      requestedAt: new Date().toISOString()
+    };
+    deletionRequests.unshift(request);
+    return send(res, 201, { request });
+  }
+  if (req.method === "POST" && url.pathname.match(/^\/api\/deletion-requests\/[^/]+\/approve$/)) {
+    if (user.role !== "admin") return send(res, 403, { error: "Admin access required." });
+    const id = url.pathname.split("/")[3];
+    const body = await readBody(req);
+    const admin = users.find(person => person.id === user.id && person.role === "admin");
+    if (!admin || body.password !== admin.password) return send(res, 403, { error: "Admin password is required to approve deletion." });
+    const request = deletionRequests.find(item => item.id === id);
+    if (!request || request.status !== "Pending") return send(res, 404, { error: "Pending deletion request not found." });
+    const index = leads.findIndex(lead => lead.id === request.leadId);
+    if (index >= 0) leads.splice(index, 1);
+    request.status = "Approved";
+    request.approvedBy = user.id;
+    request.approvedAt = new Date().toISOString();
+    return send(res, 200, { request, deleted: index >= 0 });
+  }
+  if (req.method === "POST" && url.pathname.match(/^\/api\/deletion-requests\/[^/]+\/reject$/)) {
+    if (user.role !== "admin") return send(res, 403, { error: "Admin access required." });
+    const id = url.pathname.split("/")[3];
+    const body = await readBody(req);
+    const request = deletionRequests.find(item => item.id === id);
+    if (!request || request.status !== "Pending") return send(res, 404, { error: "Pending deletion request not found." });
+    request.status = "Rejected";
+    request.rejectedBy = user.id;
+    request.rejectedAt = new Date().toISOString();
+    request.rejectionReason = String(body.reason || "Rejected by admin.").trim();
+    return send(res, 200, { request });
   }
   if (req.method === "PATCH" && url.pathname.startsWith("/api/leads/")) {
     const id = url.pathname.split("/").pop();

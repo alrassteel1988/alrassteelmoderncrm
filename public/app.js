@@ -165,6 +165,23 @@ async function api(path, options = {}) {
   return body;
 }
 
+async function downloadExport(type) {
+  const path = type === "pdf" ? "/api/export/leads.pdf" : "/api/export/leads.csv";
+  const response = await fetch(path, { headers: state.token ? { Authorization: `Bearer ${state.token}` } : {} });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || "Export failed");
+  }
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = type === "pdf" ? "al-ras-steel-leads.pdf" : "al-ras-steel-leads.csv";
+  document.body.appendChild(link);
+  link.click();
+  URL.revokeObjectURL(link.href);
+  link.remove();
+}
+
 async function login(email, password) {
   const result = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   state.token = result.token;
@@ -210,13 +227,13 @@ function renderLogin(error = "") {
         <h1>Leads Tracker</h1>
         <p>Full-stack CRM workspace for steel leads, deals, follow-ups, AI transcription, Google Places discovery, and market intelligence.</p>
         <form id="loginForm" class="login-form">
-          <label>Email <input name="email" value="admin@alrassteel.com" autocomplete="email"></label>
-          <label>Password <input name="password" type="password" value="admin123" autocomplete="current-password"></label>
+          <label>Email <input name="email" value="glory@alrassteel.com" autocomplete="email"></label>
+          <label>Password <input name="password" type="password" value="glory12345" autocomplete="current-password"></label>
           ${error ? `<div class="error">${error}</div>` : ""}
           <button class="primary" type="submit">Sign In</button>
         </form>
         <div class="login-hints">
-          <span>Admin: admin@alrassteel.com / admin123</span>
+          <span>Admin: glory@alrassteel.com / glory12345</span>
           <span>Salesman: john@alrassteel.com / sales123</span>
         </div>
       </section>
@@ -268,6 +285,7 @@ function sidebar() {
 }
 
 function topbar(title, subtitle, action) {
+  const alertCount = state.user.role === "admin" ? (state.data.deletionRequests || []).length : 4;
   return `
     <header class="topbar">
       <div>
@@ -276,7 +294,8 @@ function topbar(title, subtitle, action) {
       </div>
       <div class="top-actions">
         <input id="globalSearch" placeholder="Search leads, customers, deals..." value="${state.search}">
-        <button class="icon-btn" title="Notifications">⌁<b>4</b></button>
+        ${state.user.role === "admin" ? `<div class="export-group"><span>Export Leads</span><button class="export-btn" data-export="csv">Excel</button><button class="export-btn" data-export="pdf">PDF</button></div>` : ""}
+        <button class="icon-btn" title="Notifications">⌁<b>${alertCount}</b></button>
         <div class="profile"><span class="avatar"></span><strong>${state.user.name}</strong><small>${state.user.title}</small></div>
         ${action ? `<button class="primary" data-action="${action.id}">${action.label}</button>` : ""}
       </div>
@@ -292,6 +311,12 @@ function bindCommon() {
   });
   document.querySelector("[data-ai-demo]")?.addEventListener("click", runAiDemo);
   document.querySelector("[data-action='new-lead']")?.addEventListener("click", addLead);
+  document.querySelectorAll("[data-export]").forEach(button => button.addEventListener("click", () => {
+    downloadExport(button.dataset.export).catch(error => {
+      state.notice = error.message;
+      render();
+    });
+  }));
   document.querySelector("[data-close-modal]")?.addEventListener("click", () => {
     state.showLeadForm = false;
     state.duplicateCandidates = [];
@@ -304,6 +329,7 @@ function bindCommon() {
   document.querySelectorAll("[data-ai-action]").forEach(button => button.addEventListener("click", () => runRelationshipAction(button.dataset.aiAction)));
   document.querySelector("#activityForm")?.addEventListener("submit", saveActivity);
   document.querySelector("#pmrForm")?.addEventListener("submit", savePmr);
+  document.querySelector("#salesmanForm")?.addEventListener("submit", saveSalesmanForm);
   document.querySelector("[data-action='logout']")?.addEventListener("click", () => {
     localStorage.clear();
     location.reload();
@@ -403,6 +429,33 @@ function weeklySalesReportPanel() {
   </article>`;
 }
 
+function deletionApprovalPanel() {
+  const requests = state.data.deletionRequests || [];
+  if (state.user.role !== "admin" || !requests.length) return "";
+  return `<article class="panel full approval-panel">
+    <div class="panel-head"><div><h2>Lead Deletion Approvals</h2><p>Salesman deletion requests require admin password approval.</p></div><span>${requests.length} pending</span></div>
+    <div class="approval-list">${requests.map(request => `<section>
+      <div><b>${request.companyName}</b><p>${request.reason}</p><small>Requested by ${request.requestedByName} · ${new Date(request.requestedAt).toLocaleString()}</small></div>
+      <div><button data-approve-delete="${request.id}">Approve</button><button data-reject-delete="${request.id}">Reject</button></div>
+    </section>`).join("")}</div>
+  </article>`;
+}
+
+function salesmanAccountForm() {
+  if (state.user.role !== "admin") return "";
+  return `<form id="salesmanForm" class="user-create-form">
+    <h2>Create Salesman Account</h2>
+    <p>Only the admin account can create individual salesman logins.</p>
+    <div>
+      <label>Name <input name="name" required></label>
+      <label>Email <input name="email" type="email" required></label>
+      <label>Password <input name="password" type="password" required></label>
+      <label>Territory <select name="territory">${["UAE-North", "UAE-South", "Saudi", "Kuwait", "Bahrain", "Oman", "Mixed"].map(item => `<option>${item}</option>`).join("")}</select></label>
+    </div>
+    <button class="primary" type="submit">Create Salesman</button>
+  </form>`;
+}
+
 const pages = {
   dashboard: {
     title: () => state.user?.role === "admin" ? "CRM Admin Dashboard" : "My Sales Dashboard",
@@ -417,6 +470,7 @@ const pages = {
       const primaryCards = isAdmin ? `${pipelineCard}${quotaCard}${salesOverviewCard}` : `${salesOverviewCard}${quotaCard}${pipelineCard}`;
       return `
         ${dashboardNewsStrip()}
+        ${deletionApprovalPanel()}
         ${dashboardCards()}
         <section class="dashboard-grid">
           ${primaryCards}
@@ -444,7 +498,7 @@ const pages = {
         </article>
         <article class="panel profile-card">
           ${selected ? `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} · ${selected.sector} · ${selected.territory}</p>${statusBadge(selected.status)}</div></div>
-          <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>More</button></div>
+          <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button data-delete-lead="${selected.id}">Request Delete</button></div>
           <dl>${[["Primary Contact", selected.contactPerson], ["Title", selected.primaryTitle], ["Email", selected.email], ["Phone", selected.phone], ["Legal Name", selected.legalName], ["Country / Emirate", selected.countryEmirate], ["Tier", selected.tier], ["Website", selected.website], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${value || "—"}</dd>`).join("")}</dl>
           <div class="score"><span>Relationship Health</span><strong>${selected.relationshipHealth} · ${selected.healthScore}/100</strong><i style="width:${selected.healthScore}%"></i><p>${selected.healthReason}</p></div>
           <section class="ai-actions">${AI_ACTIONS.slice(0, state.user.role === "admin" ? 9 : 8).map(([id, label]) => `<button data-ai-action="${id}">${label}</button>`).join("")}</section>
@@ -567,7 +621,7 @@ const pages = {
         { label: "Roles", value: 4, delta: "0.0%" },
         { label: "Automations", value: 12, delta: "7.5%" },
         { label: "Integrations", value: 6, delta: "2.8%" }
-      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage director and salesman access permissions by territory.</p>${table(["User", "Role", "Territory", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.title || user.role}</td><td>${user.territory || "Mixed"}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can delete contacts", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}${state.data.configAudit?.length ? `<article class="panel full">${table(["Change", "Parameter", "Previous", "New", "Confirmed"], state.data.configAudit.map(change => `<tr><td><b>${change.change_id}</b></td><td>${change.parameter_changed}</td><td>${change.previous_value}</td><td>${change.new_value}</td><td>${change.confirmation_given ? "Yes" : "No"}</td></tr>`))}</article>` : ""}`;
+      ])}<section class="settings-grid"><article class="panel menu"><h2>Settings Menu</h2>${["Profile", "Workspace", "Users & Roles", "Notifications", "Integrations", "Security", "Billing"].map((item, index) => `<button class="${index === 2 ? "active" : ""}">${item}</button>`).join("")}</article><article class="panel"><h2>Users & Roles</h2><p>Manage director and salesman access permissions by territory.</p>${salesmanAccountForm()}${table(["User", "Role", "Territory", "Access", "Status"], (state.data.users.length ? state.data.users : [state.user]).map(user => `<tr><td><b>${user.name}</b></td><td>${user.title || user.role}</td><td>${user.territory || "Mixed"}</td><td>${user.access}</td><td>${user.status}</td></tr>`))}<h2>Permission Controls</h2>${["Can export reports", "Can assign leads", "Can request lead deletion", "Can edit automation"].map((item, index) => `<label class="switch-row"><b>${item}</b><input type="checkbox" ${index < 2 ? "checked" : ""}><span></span></label>`).join("")}</article></section>${integrationPanel()}${state.data.configAudit?.length ? `<article class="panel full">${table(["Change", "Parameter", "Previous", "New", "Confirmed"], state.data.configAudit.map(change => `<tr><td><b>${change.change_id}</b></td><td>${change.parameter_changed}</td><td>${change.previous_value}</td><td>${change.new_value}</td><td>${change.confirmation_given ? "Yes" : "No"}</td></tr>`))}</article>` : ""}`;
     }
   }
 };
@@ -772,6 +826,41 @@ async function saveLeadForm(event) {
   }
 }
 
+async function requestLeadDeletion(leadId) {
+  const reason = prompt("Reason for deleting this lead?");
+  if (reason === null) return;
+  const result = await api(`/api/leads/${leadId}/delete-request`, { method: "POST", body: JSON.stringify({ reason }) });
+  state.notice = result.message || `Deletion request submitted for ${result.request.companyName}.`;
+  await bootstrap();
+  render();
+}
+
+async function approveDeletionRequest(requestId) {
+  const password = prompt("Enter admin password to approve this lead deletion:");
+  if (!password) return;
+  await api(`/api/deletion-requests/${requestId}/approve`, { method: "POST", body: JSON.stringify({ password }) });
+  state.notice = "Lead deletion approved and completed.";
+  await bootstrap();
+  render();
+}
+
+async function rejectDeletionRequest(requestId) {
+  const reason = prompt("Reason for rejecting this deletion request?") || "Rejected by admin.";
+  await api(`/api/deletion-requests/${requestId}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+  state.notice = "Deletion request rejected.";
+  await bootstrap();
+  render();
+}
+
+async function saveSalesmanForm(event) {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const result = await api("/api/users", { method: "POST", body: JSON.stringify(payload) });
+  state.notice = `Salesman account created for ${result.user.name}.`;
+  await bootstrap();
+  render();
+}
+
 async function runRelationshipAction(action) {
   const lead = state.data.leads.find(item => item.id === state.selectedLeadId) || state.data.leads[0];
   const result = await api("/api/ai/actions", { method: "POST", body: JSON.stringify({ action, companyId: lead?.companyId }) });
@@ -817,6 +906,12 @@ document.addEventListener("click", async event => {
     state.notice = "Follow-up marked complete.";
     await bootstrap();
   }
+  const deleteLeadId = event.target.closest("[data-delete-lead]")?.dataset.deleteLead;
+  if (deleteLeadId) await requestLeadDeletion(deleteLeadId);
+  const approveDeleteId = event.target.closest("[data-approve-delete]")?.dataset.approveDelete;
+  if (approveDeleteId) await approveDeletionRequest(approveDeleteId);
+  const rejectDeleteId = event.target.closest("[data-reject-delete]")?.dataset.rejectDelete;
+  if (rejectDeleteId) await rejectDeletionRequest(rejectDeleteId);
   if (event.target.closest("[data-places-demo]")) {
     const result = await api("/api/integrations/places/search?q=steel fabricators UAE");
     el("#integrationOutput").innerHTML = `<b>${result.disabled ? "Fallback" : "Live"} Google Places</b>${result.results.map(place => `<p>${place.name || place.formatted_address} · ${place.address || place.formatted_address || ""}</p>`).join("")}`;

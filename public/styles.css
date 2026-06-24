@@ -720,6 +720,86 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   font-size: 17px;
   font-weight: 800;
 }
+.contacts-editor {
+  margin: -26px 0 34px;
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 14px;
+  background: rgba(248, 250, 255, .72);
+}
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.section-head h3 { margin: 0; }
+.section-head span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.contact-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.contact-person-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 13px 14px;
+}
+.contact-person-card b,
+.contact-person-card span,
+.contact-person-card small {
+  display: block;
+  line-height: 1.35;
+}
+.contact-person-card b { color: #111827; font-size: 14px; font-weight: 800; }
+.contact-person-card span { color: #4c5a6e; font-size: 12px; font-weight: 600; }
+.contact-person-card small { color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.contact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.contact-actions em {
+  border-radius: 999px;
+  background: #e9f7f1;
+  color: var(--green);
+  padding: 7px 10px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+.contact-actions button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8faff;
+  color: #40506f;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.contact-actions button:last-child { color: #b42318; }
+.contact-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.contact-form {
+  margin-bottom: 0;
+}
+.contact-form button {
+  grid-column: span 2;
+}
 .activity-timeline {
   position: relative;
   padding-left: 28px;
@@ -1379,8 +1459,10 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   .news-card { min-height: 0; }
   .lead-form-grid, .ai-actions, .mini-form { grid-template-columns: 1fr; }
   .lead-ai-assist { grid-template-columns: 1fr; }
+  .section-head, .contact-person-card { display: grid; grid-template-columns: 1fr; }
+  .contact-actions { justify-content: flex-start; }
   .note-tools { align-items: flex-start; flex-direction: column; }
-  .span-2, .mini-form textarea, .mini-form button { grid-column: auto; }
+  .span-2, .mini-form textarea, .mini-form button, .contact-form button { grid-column: auto; }
   .modal-backdrop { align-items: start; padding: 12px; }
   .modal { max-height: 94vh; padding: 18px; }
   .panel { padding: 18px 16px; border-radius: 14px; }

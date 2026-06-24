@@ -168,6 +168,34 @@ function auth(token) {
     assert.ok(adminAfterSalesmanLead.body.leads.some(lead => lead.id === salesmanCreatedLead.body.lead.id));
     assert.equal(adminAfterSalesmanLead.body.dashboard.kpis.newLeads, 2);
 
+    const contactUpdate = await request(`/api/leads/${salesmanCreatedLead.body.lead.id}`, {
+      method: "PATCH",
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({
+        contacts: [
+          { id: "default", name: "Primary Buyer", title: "Procurement", phone: "050 111 2222", email: "primary@example.com", isDefault: true },
+          { id: "c2", name: "Site Engineer", title: "Engineer", phone: "050 333 4444", email: "site@example.com", isDefault: false }
+        ]
+      })
+    });
+    assert.equal(contactUpdate.response.status, 200);
+    assert.equal(contactUpdate.body.lead.contacts.length, 2);
+    assert.equal(contactUpdate.body.lead.contactPerson, "Primary Buyer");
+
+    const defaultContactChange = await request(`/api/leads/${salesmanCreatedLead.body.lead.id}`, {
+      method: "PATCH",
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({
+        contacts: [
+          { id: "default", name: "Primary Buyer", title: "Procurement", phone: "050 111 2222", email: "primary@example.com", isDefault: false },
+          { id: "c2", name: "Site Engineer", title: "Engineer", phone: "050 333 4444", email: "site@example.com", isDefault: true }
+        ]
+      })
+    });
+    assert.equal(defaultContactChange.response.status, 200);
+    assert.equal(defaultContactChange.body.lead.contactPerson, "Site Engineer");
+    assert.equal(defaultContactChange.body.lead.email, "site@example.com");
+
     const deleteRequest = await request(`/api/leads/${created.body.lead.id}/delete-request`, {
       method: "POST",
       headers: auth(salesmanLogin.body.token),

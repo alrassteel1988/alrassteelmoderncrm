@@ -264,11 +264,45 @@ function calendarGrid(date, monthEvents) {
   ].join("");
 }
 
+function leadContacts(lead) {
+  const contacts = Array.isArray(lead.contacts) && lead.contacts.length
+    ? lead.contacts
+    : [{ id: "default", name: lead.contactPerson || lead.name || "Default Contact", title: lead.primaryTitle || "", phone: lead.phone || "", email: lead.email || "", isDefault: true }];
+  const defaultIndex = Math.max(0, contacts.findIndex(contact => contact.isDefault));
+  return contacts.map((contact, index) => ({ ...contact, isDefault: index === defaultIndex }));
+}
+
+function contactsEditor(lead) {
+  const contacts = leadContacts(lead);
+  return `<section class="contacts-editor">
+    <div class="section-head"><h3>Contact Persons</h3><span>One default contact is required for this lead.</span></div>
+    <div class="contact-list">${contacts.map((contact, index) => `<article class="contact-person-card">
+      <div>
+        <b>${displayValue(contact.name)}</b>
+        <span>${displayValue(contact.title)}</span>
+        <small>${displayValue(contact.phone)} ${contact.email ? `&middot; ${contact.email}` : ""}</small>
+      </div>
+      <div class="contact-actions">
+        ${contact.isDefault ? `<em>Default</em>` : `<button type="button" data-default-contact="${index}">Set Default</button>`}
+        <button type="button" data-delete-contact="${index}" ${contacts.length <= 1 ? "disabled" : ""}>Delete</button>
+      </div>
+    </article>`).join("")}</div>
+    <form id="contactForm" class="mini-form contact-form">
+      <input name="name" placeholder="Contact person" required>
+      <input name="title" placeholder="Title">
+      <input name="phone" placeholder="Phone">
+      <input name="email" type="email" placeholder="Email">
+      <button>Add Contact Person</button>
+    </form>
+  </section>`;
+}
+
 function leadDetailsContent(selected) {
   if (!selected) return "";
   return `<div class="profile-hero"><span class="big-avatar health-${String(selected.relationshipHealth || "AMBER").toLowerCase()}"></span><div><h2>${selected.companyName}</h2><p>${selected.companyId} Â· ${selected.sector} Â· ${selected.territory}</p>${statusBadge(selected.status)}</div></div>
     <div class="button-row"><button>Call</button><button>Email</button><button data-route="messages">Message</button><button>Schedule</button><button data-delete-lead="${selected.id}">Request Delete</button></div>
     <dl>${[["Primary Contact", selected.contactPerson], ["Title", selected.primaryTitle], ["Email", selected.email], ["Phone", selected.phone], ["Legal Name", selected.legalName], ["Country / Emirate", selected.countryEmirate], ["Tier", selected.tier], ["Website", selected.website], ["Owner", ownerName(selected.ownerId)]].map(([key, value]) => `<dt>${key}</dt><dd>${displayValue(value)}</dd>`).join("")}</dl>
+    ${contactsEditor(selected)}
     <div class="score"><span>Relationship Health</span><strong>${selected.relationshipHealth} Â· ${selected.healthScore}/100</strong><i style="width:${selected.healthScore}%"></i><p>${selected.healthReason}</p></div>
     <section class="ai-actions">${AI_ACTIONS.slice(0, state.user.role === "admin" ? 9 : 8).map(([id, label]) => `<button data-ai-action="${id}">${label}</button>`).join("")}</section>
     ${state.aiOutput ? `<div class="ai-output">${state.aiOutput.replace(/\n/g, "<br>")}</div>` : ""}
@@ -500,6 +534,7 @@ function bindCommon() {
   document.querySelectorAll("[data-ai-action]").forEach(button => button.addEventListener("click", () => runRelationshipAction(button.dataset.aiAction)));
   document.querySelector("#activityForm")?.addEventListener("submit", saveActivity);
   document.querySelector("#pmrForm")?.addEventListener("submit", savePmr);
+  document.querySelector("#contactForm")?.addEventListener("submit", saveContactPerson);
   document.querySelector("#salesmanForm")?.addEventListener("submit", saveSalesmanForm);
   document.querySelectorAll("[data-lead-filter]").forEach(select => select.addEventListener("change", event => {
     state.leadFilters[event.currentTarget.dataset.leadFilter] = event.currentTarget.value;
@@ -1112,6 +1147,55 @@ async function savePmr(event) {
   await bootstrap();
 }
 
+async function updateLeadContacts(contacts) {
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId);
+  if (!lead) return;
+  const result = await api(`/api/leads/${lead.id}`, { method: "PATCH", body: JSON.stringify({ contacts }) });
+  state.selectedLeadId = result.lead.id;
+  state.showLeadDetails = true;
+  await bootstrap();
+}
+
+async function saveContactPerson(event) {
+  event.preventDefault();
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId);
+  if (!lead) return;
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const contacts = leadContacts(lead).concat({
+    id: `contact-${Date.now()}`,
+    name: payload.name,
+    title: payload.title,
+    phone: payload.phone,
+    email: payload.email,
+    isDefault: false
+  });
+  await updateLeadContacts(contacts);
+  state.notice = "Contact person added.";
+}
+
+async function setDefaultContact(index) {
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId);
+  if (!lead) return;
+  const contacts = leadContacts(lead).map((contact, itemIndex) => ({ ...contact, isDefault: itemIndex === Number(index) }));
+  await updateLeadContacts(contacts);
+  state.notice = "Default contact updated.";
+}
+
+async function deleteContactPerson(index) {
+  const lead = state.data.leads.find(item => item.id === state.selectedLeadId);
+  if (!lead) return;
+  const contacts = leadContacts(lead);
+  if (contacts.length <= 1) {
+    state.notice = "Each lead must keep at least one default contact person.";
+    render();
+    return;
+  }
+  const nextContacts = contacts.filter((_, itemIndex) => itemIndex !== Number(index));
+  if (!nextContacts.some(contact => contact.isDefault)) nextContacts[0].isDefault = true;
+  await updateLeadContacts(nextContacts);
+  state.notice = "Contact person deleted.";
+}
+
 async function runAiDemo() {
   const result = await api("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ text: "Client requested updated steel plate pricing and a follow-up tomorrow morning." }) });
   state.notice = `${result.disabled ? "Fallback" : "Live"} Whisper: ${result.summary}`;
@@ -1145,6 +1229,10 @@ document.addEventListener("click", async event => {
   }
   const deleteLeadId = event.target.closest("[data-delete-lead]")?.dataset.deleteLead;
   if (deleteLeadId) await requestLeadDeletion(deleteLeadId);
+  const defaultContactIndex = event.target.closest("[data-default-contact]")?.dataset.defaultContact;
+  if (defaultContactIndex !== undefined) await setDefaultContact(defaultContactIndex);
+  const deleteContactIndex = event.target.closest("[data-delete-contact]")?.dataset.deleteContact;
+  if (deleteContactIndex !== undefined) await deleteContactPerson(deleteContactIndex);
   const approveDeleteId = event.target.closest("[data-approve-delete]")?.dataset.approveDelete;
   if (approveDeleteId) await approveDeletionRequest(approveDeleteId);
   const rejectDeleteId = event.target.closest("[data-reject-delete]")?.dataset.rejectDelete;

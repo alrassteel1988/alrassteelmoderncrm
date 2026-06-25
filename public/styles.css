@@ -189,7 +189,11 @@ button { cursor: pointer; }
   background: #fff;
   color: var(--green);
   padding: 0 13px;
-  font-weight: 900;
+  font-family: var(--font-main);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
 }
 .export-group {
   display: flex;
@@ -202,8 +206,10 @@ button { cursor: pointer; }
 }
 .export-group span {
   color: var(--muted);
+  font-family: var(--font-main);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .export-group .export-btn {
@@ -1164,6 +1170,13 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   padding: 10px 12px;
 }
 .user-create-form button { justify-self: start; }
+.user-create-form .primary {
+  font-family: var(--font-main);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
 .integration-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .integration-grid button {
   border: 1px solid var(--line);

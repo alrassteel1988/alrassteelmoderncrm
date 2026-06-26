@@ -943,6 +943,61 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
   padding: 9px 12px;
   font-weight: 900;
 }
+.weekly-report-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.weekly-report-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.weekly-report-form textarea,
+.weekly-report-form select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .82);
+  color: var(--ink);
+  font: 500 13px/1.45 Montserrat, sans-serif;
+  padding: 11px 12px;
+}
+.weekly-report-form textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+.weekly-select-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.weekly-report-form .check-row {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.director-weekly-review {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.director-weekly-review h3 { margin: 0 0 12px; }
+.director-weekly-review button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--green);
+  font-weight: 800;
+  padding: 7px 10px;
+  margin-right: 6px;
+}
 .director-queue { margin-top: 12px; border-left: 4px solid var(--orange); }
 .approval-panel { margin-bottom: 24px; border-left: 4px solid var(--orange); }
 .approval-panel .panel-head span {

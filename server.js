@@ -153,6 +153,10 @@ const pmrs = [];
 
 const configAudit = [];
 
+const weeklyReports = [];
+
+const weeklyReportItems = [];
+
 const deals = [];
 
 const tasks = [];
@@ -294,6 +298,21 @@ function simpleLeadsPdf() {
 
 function ownerNameServer(id) {
   return users.find(user => user.id === id)?.name || "Unassigned";
+}
+
+function nullableDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function reportIdFor(userId, weekEnding) {
+  return `wr-${userId}-${weekEnding}`.replace(/[^a-zA-Z0-9-]/g, "-");
+}
+
+function weeklyReportKey(user, weekEnding = fridayFor(now)) {
+  return { id: reportIdFor(user.id, weekEnding), userId: user.id, weekEnding };
 }
 
 function readBody(req) {
@@ -499,6 +518,29 @@ async function syncSupabaseUsersOnce() {
   }
 }
 
+async function migrateCurrentRecordsToStructuredSupabase() {
+  if (!supabaseConfig().enabled) return { disabled: true };
+  const result = { companies: 0, activities: 0, pmrs: 0, reports: 0, errors: [] };
+  for (const lead of leads) {
+    const persisted = await persistCompanyModelToSupabase(lead);
+    if (persisted.company?.persisted) result.companies += 1;
+    else if (persisted.company?.error) result.errors.push(`company ${lead.companyId}: ${persisted.company.error}`);
+  }
+  for (const activity of activities) {
+    const persisted = await persistStructuredActivityToSupabase(activity);
+    if (persisted.persisted) result.activities += 1;
+  }
+  for (const pmr of pmrs) {
+    const persisted = await persistPmrToSupabase(pmr);
+    if (persisted.persisted) result.pmrs += 1;
+  }
+  for (const report of weeklyReports) {
+    const persisted = await persistWeeklyReportToSupabase(report);
+    if (persisted.persisted) result.reports += 1;
+  }
+  return result;
+}
+
 async function persistUserToSupabase(user) {
   try {
     await supabaseRest("crm_users", {
@@ -539,6 +581,93 @@ async function persistLeadToSupabase(lead) {
   }
 }
 
+async function persistLeadEverywhere(lead) {
+  const legacy = await persistLeadToSupabase(lead);
+  const structured = await persistCompanyModelToSupabase(lead);
+  return { legacy, structured };
+}
+
+async function persistCompanyModelToSupabase(lead) {
+  const normalized = normalizeCompanyRecord(lead);
+  const result = { company: null, contacts: null, opportunity: null };
+  try {
+    await supabaseRest("companies", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: normalized.companyId,
+        legacy_lead_id: normalized.id,
+        company_name: normalized.companyName,
+        legal_name: normalized.legalName,
+        country_emirate: normalized.countryEmirate,
+        sector: normalized.sector,
+        tier: String(normalized.tier || ""),
+        status: normalized.status,
+        assigned_user_id: normalized.ownerId,
+        territory: normalized.territory,
+        next_action: normalized.nextAction,
+        next_action_date: nullableDate(normalized.nextActionDate || normalized.nextFollowUp),
+        estimated_value: Number(normalized.estimatedValue || normalized.value || 0),
+        first_order_date: nullableDate(normalized.firstOrderDate),
+        estimated_monthly_volume: normalized.estimatedMonthlyVolume || "",
+        product_interest: normalized.productInterest || "",
+        tags: normalized.tags || "",
+        quotation_ref: normalized.quotationRef || "",
+        payload: normalized
+      }
+    });
+    result.company = { persisted: true };
+  } catch (error) {
+    result.company = { persisted: false, error: error.message };
+  }
+  try {
+    await supabaseRest("contacts", { method: "DELETE", query: `?company_id=eq.${encodeURIComponent(normalized.companyId)}` });
+    for (const [index, contact] of normalizeLeadContacts(normalized).entries()) {
+      await supabaseRest("contacts", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        body: {
+          id: contact.id && contact.id !== "default" ? contact.id : `${normalized.companyId}-contact-${index + 1}`,
+          company_id: normalized.companyId,
+          name: contact.name || "Default Contact",
+          title: contact.title || "",
+          phone: contact.phone || "",
+          email: contact.email || "",
+          is_default: Boolean(contact.isDefault),
+          payload: contact
+        }
+      });
+    }
+    result.contacts = { persisted: true };
+  } catch (error) {
+    result.contacts = { persisted: false, error: error.message };
+  }
+  try {
+    if (Number(normalized.estimatedValue || normalized.value || 0) > 0 || normalized.status !== "PROSPECT") {
+      await supabaseRest("opportunities", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        body: {
+          id: `opp-${normalized.companyId}`,
+          company_id: normalized.companyId,
+          owner_id: normalized.ownerId,
+          stage: normalized.status,
+          expected_value: Number(normalized.estimatedValue || normalized.value || 0),
+          probability: normalized.status === "ACTIVE" ? 90 : normalized.status === "ENGAGED" ? 60 : normalized.status === "OUTREACH" ? 35 : 20,
+          expected_close_date: nullableDate(normalized.nextActionDate || normalized.nextFollowUp),
+          product_interest: normalized.productInterest || "",
+          risk_note: "",
+          payload: normalized
+        }
+      });
+    }
+    result.opportunity = { persisted: true };
+  } catch (error) {
+    result.opportunity = { persisted: false, error: error.message };
+  }
+  return result;
+}
+
 async function persistActivityToSupabase(activity) {
   try {
     await supabaseRest("crm_activities", {
@@ -549,6 +678,90 @@ async function persistActivityToSupabase(activity) {
         company_id: activity.companyId,
         lead_id: activity.leadId,
         payload: activity
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
+  }
+}
+
+async function persistActivityEverywhere(activity) {
+  const legacy = await persistActivityToSupabase(activity);
+  const structured = await persistStructuredActivityToSupabase(activity);
+  return { legacy, structured };
+}
+
+async function persistWeeklyReportToSupabase(report) {
+  try {
+    await supabaseRest("weekly_reports", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: report.id,
+        week_ending: report.weekEnding,
+        user_id: report.userId,
+        state: report.state,
+        summary: report.summary || "",
+        market_overlay: report.marketOverlay || {},
+        blockers: report.blockers || [],
+        attestation: report.attestation || null,
+        director_review: report.directorReview || null,
+        payload: report,
+        submitted_at: report.submittedAt || null,
+        reviewed_at: report.reviewedAt || null
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
+  }
+}
+
+async function persistStructuredActivityToSupabase(activity) {
+  try {
+    await supabaseRest("activities", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: activity.id,
+        company_id: activity.companyId,
+        activity_type: activity.type,
+        logged_by: activity.loggedBy,
+        notes: activity.notes || "",
+        quotation_ref: activity.quotationRef || "",
+        pmr_linked: Boolean(activity.pmrLinked),
+        payload: activity
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
+  }
+}
+
+async function persistPmrToSupabase(pmr) {
+  try {
+    await supabaseRest("pmrs", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: pmr.id,
+        company_id: pmr.companyId,
+        activity_id: pmr.activityId,
+        meeting_date: nullableDate(pmr.meetingDate) || new Date().toISOString().slice(0, 10),
+        filed_by: pmr.filedBy,
+        products_discussed: pmr.productsDiscussed || "",
+        competitors_mentioned: pmr.competitorsMentioned || "",
+        compliance_requirements: pmr.complianceRequirements || [],
+        relationship_heat_score: Number(pmr.relationshipHeatScore || 3),
+        first_order_timing: pmr.firstOrderTiming || "unknown",
+        potential_annual_value: pmr.potentialAnnualValue || "unknown",
+        director_action_required: pmr.directorActionRequired || "None",
+        account_status: pmr.accountStatus || "Warm",
+        raw_document_url: pmr.rawDocumentUrl || "",
+        notes: pmr.notes || "",
+        payload: pmr
       }
     });
     return { persisted: true };
@@ -730,6 +943,8 @@ function fridayFor(date = new Date()) {
 }
 
 function weeklyReportFor(user) {
+  const { id, weekEnding } = weeklyReportKey(user);
+  const saved = weeklyReports.find(report => report.id === id);
   const scopedLeads = visibleLeads(user).map(decorateLead);
   const scopedDeals = visibleDeals(user);
   const scopedTasks = visibleTasks(user);
@@ -754,16 +969,20 @@ function weeklyReportFor(user) {
   const securedOrders = scopedDeals
     .filter(deal => deal.stage === "Won")
     .map(deal => ({ account: deal.company, value: deal.value, terms: "ERP terms", status: "PO → Ack", problem: "No flagged exception" }));
-  const blockers = [
+  const submitted = Boolean(saved?.submittedAt);
+  const savedMarketOverlay = saved?.marketOverlay || {};
+  const blockers = submitted ? [] : [
     ...flaggedAccounts.map(item => `${item.companyName}: disposition required`),
     ...pipelineConfirmations.filter(item => item.blocker).map(item => `${item.account}: ${item.blocker}`),
     scopedTasks.some(task => task.status !== "Done") ? "Next-week plan must be confirmed from open tasks" : "",
-    "Digital attestation not signed"
+    saved?.attestation?.confirmed ? "" : "Digital attestation not signed"
   ].filter(Boolean);
   const totalRequired = Math.max(blockers.length + 7, 7);
   return {
-    state: blockers.length ? "In Progress" : "Ready for Sign-Off",
-    weekEnding: fridayFor(now),
+    id,
+    userId: user.id,
+    state: saved?.state || (blockers.length ? "In Progress" : "Ready for Sign-Off"),
+    weekEnding,
     rep: user.name,
     branch: user.territory || "Mixed",
     completion: Math.max(0, Math.round(((totalRequired - blockers.length) / totalRequired) * 100)),
@@ -772,18 +991,108 @@ function weeklyReportFor(user) {
     pipelineConfirmations,
     flaggedAccounts,
     marketOverlay: {
-      demand: "No selection",
-      pricing: "No selection",
-      creditClimate: "No selection",
-      projects: "No note yet",
+      demand: savedMarketOverlay.demand || "No selection",
+      pricing: savedMarketOverlay.pricing || "No selection",
+      creditClimate: savedMarketOverlay.creditClimate || "No selection",
+      projects: savedMarketOverlay.projects || "No note yet",
+      summary: saved?.summary || "",
       nextWeekPlan: scopedTasks.filter(task => task.status !== "Done").slice(0, 3).map(task => task.title)
     },
+    attestation: saved?.attestation || null,
+    submittedAt: saved?.submittedAt || null,
+    directorReview: saved?.directorReview || null,
+    reviewedAt: saved?.reviewedAt || null,
     directorQueue: user.role === "admin" ? {
-      missingReports: users.filter(person => person.role !== "admin" && person.status !== "Active").map(person => person.name),
+      missingReports: users.filter(person => person.role !== "admin" && person.status === "Active" && !weeklyReports.some(report => report.userId === person.id && report.weekEnding === weekEnding && report.submittedAt)).map(person => person.name),
       contradictionFlags: flaggedAccounts.slice(0, 2).map(item => `${item.companyName}: credit/context requires review`),
       thinReports: ["No complete-but-thin reports yet"]
     } : null
   };
+}
+
+function upsertWeeklyReport(report) {
+  const index = weeklyReports.findIndex(item => item.id === report.id);
+  if (index >= 0) weeklyReports[index] = { ...weeklyReports[index], ...report };
+  else weeklyReports.unshift(report);
+  return weeklyReports.find(item => item.id === report.id);
+}
+
+function submittedWeeklyReportsForDirector() {
+  return weeklyReports
+    .filter(report => report.submittedAt)
+    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+    .map(report => ({
+      ...report,
+      rep: users.find(user => user.id === report.userId)?.name || report.userId
+    }));
+}
+
+async function submitWeeklyReport(user, body = {}) {
+  const base = weeklyReportFor(user);
+  const attestationConfirmed = Boolean(body.attestationConfirmed || body.attestation?.confirmed);
+  const summary = String(body.summary || "").trim();
+  const marketOverlay = {
+    ...base.marketOverlay,
+    demand: body.demand || base.marketOverlay.demand,
+    pricing: body.pricing || base.marketOverlay.pricing,
+    creditClimate: body.creditClimate || base.marketOverlay.creditClimate,
+    projects: body.projects || base.marketOverlay.projects,
+    summary
+  };
+  const unresolvedBlockers = base.blockers.filter(blocker => blocker !== "Digital attestation not signed");
+  if (!attestationConfirmed) return { error: "Digital attestation is required before submission.", status: 409 };
+  if (!summary || summary.length < 20) return { error: "Weekly summary must be at least 20 characters.", status: 409 };
+  if (unresolvedBlockers.length && !body.confirmFlagDispositions) return { error: "Every system flag must be addressed or explicitly confirmed before submission.", status: 409, blockers: unresolvedBlockers };
+  const report = upsertWeeklyReport({
+    ...base,
+    id: base.id,
+    userId: user.id,
+    state: "Submitted",
+    summary,
+    marketOverlay,
+    blockers: [],
+    attestation: {
+      confirmed: true,
+      text: "I confirm this report is complete and honest.",
+      signedBy: user.id,
+      signedByName: user.name,
+      signedAt: new Date().toISOString(),
+      userAgent: body.userAgent || ""
+    },
+    submittedAt: new Date().toISOString()
+  });
+  weeklyReportItems.push(...base.flaggedAccounts.map(item => ({
+    id: `wri-${weeklyReportItems.length + 1}`,
+    reportId: report.id,
+    itemType: "flagged-account",
+    companyId: item.companyId,
+    disposition: body.confirmFlagDispositions ? "Confirmed by rep" : "",
+    payload: item
+  })));
+  await persistWeeklyReportToSupabase(report);
+  return { report };
+}
+
+async function reviewWeeklyReport(user, reportId, body = {}) {
+  if (user.role !== "admin") return { error: "Director access required.", status: 403 };
+  const report = weeklyReports.find(item => item.id === reportId);
+  if (!report || !report.submittedAt) return { error: "Submitted weekly report not found.", status: 404 };
+  const decision = body.decision === "revision" ? "Revision Required" : "Accepted";
+  report.state = decision;
+  report.directorReview = {
+    decision,
+    note: String(body.note || "").trim(),
+    reviewedBy: user.id,
+    reviewedByName: user.name,
+    reviewedAt: new Date().toISOString()
+  };
+  report.reviewedAt = report.directorReview.reviewedAt;
+  if (decision === "Revision Required") {
+    report.submittedAt = null;
+    report.blockers = ["Director requested revision"];
+  }
+  await persistWeeklyReportToSupabase(report);
+  return { report };
 }
 
 async function transcribeWithWhisper(payload) {
@@ -996,6 +1305,7 @@ async function handleApi(req, res) {
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     const supabaseUsers = await syncSupabaseUsersOnce();
     const supabaseSync = await syncSupabaseLeadsOnce();
+    const structuredMigration = await migrateCurrentRecordsToStructuredSupabase();
     const industryNews = await industryNewsFeed();
     const scopedLeads = visibleLeads(user).map(decorateLead);
     return send(res, 200, {
@@ -1013,12 +1323,27 @@ async function handleApi(req, res) {
       marketIntel,
       industryNews,
       weeklyReport: weeklyReportFor(user),
+      weeklyReports: user.role === "admin" ? submittedWeeklyReportsForDirector() : [],
       activities: activities.filter(activity => scopedLeads.some(lead => lead.companyId === activity.companyId || lead.id === activity.leadId)),
       pmrs: pmrs.filter(pmr => scopedLeads.some(lead => lead.companyId === pmr.companyId || lead.id === pmr.leadId)),
       deletionRequests: user.role === "admin" ? deletionRequests.filter(request => request.status === "Pending") : deletionRequests.filter(request => request.requestedBy === user.id),
       configAudit: user.role === "admin" ? configAudit : [],
-      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, users: supabaseUsers, leads: supabaseSync } }
+      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, users: supabaseUsers, leads: supabaseSync, structuredMigration } }
     });
+  }
+  if (req.method === "GET" && url.pathname === "/api/weekly-reports/current") {
+    return send(res, 200, { report: weeklyReportFor(user), submittedReports: user.role === "admin" ? submittedWeeklyReportsForDirector() : [] });
+  }
+  if (req.method === "POST" && url.pathname === "/api/weekly-reports/current/submit") {
+    const result = await submitWeeklyReport(user, await readBody(req));
+    if (result.error) return send(res, result.status || 400, result);
+    return send(res, 201, result);
+  }
+  if (req.method === "POST" && url.pathname.match(/^\/api\/weekly-reports\/[^/]+\/review$/)) {
+    const reportId = decodeURIComponent(url.pathname.split("/")[3]);
+    const result = await reviewWeeklyReport(user, reportId, await readBody(req));
+    if (result.error) return send(res, result.status || 400, result);
+    return send(res, 200, result);
   }
   if (req.method === "GET" && (url.pathname === "/api/export/leads.xls" || url.pathname === "/api/export/leads.csv")) {
     if (user.role !== "admin") return send(res, 403, { error: "Admin access required for lead export." });
@@ -1149,8 +1474,8 @@ async function handleApi(req, res) {
       pmrLinked: false
     };
     activities.unshift(activity);
-    const supabase = await persistLeadToSupabase(lead);
-    await persistActivityToSupabase(activity);
+    const supabase = await persistLeadEverywhere(lead);
+    await persistActivityEverywhere(activity);
     return send(res, 201, { lead: decorateLead(lead), duplicates: duplicateCandidates(companyName, user), supabase });
   }
   if (req.method === "POST" && url.pathname.match(/^\/api\/leads\/[^/]+\/delete-request$/)) {
@@ -1208,7 +1533,7 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     Object.assign(lead, body);
     normalizeLeadContacts(lead);
-    const supabase = await persistLeadToSupabase(lead);
+    const supabase = await persistLeadEverywhere(lead);
     return send(res, 200, { lead: decorateLead(lead), supabase });
   }
   if (req.method === "POST" && url.pathname === "/api/ai/transcribe") {
@@ -1231,7 +1556,7 @@ async function handleApi(req, res) {
       pmrLinked: false
     };
     activities.unshift(activity);
-    await persistActivityToSupabase(activity);
+    await persistActivityEverywhere(activity);
     return send(res, 201, { activity });
   }
   if (req.method === "POST" && url.pathname === "/api/pmrs") {
@@ -1250,7 +1575,7 @@ async function handleApi(req, res) {
       pmrLinked: true
     };
     activities.unshift(activity);
-    await persistActivityToSupabase(activity);
+    await persistActivityEverywhere(activity);
     const pmr = {
       id: `pmr${pmrs.length + 1}`,
       companyId: lead.companyId,
@@ -1270,6 +1595,7 @@ async function handleApi(req, res) {
       notes: body.notes || ""
     };
     pmrs.unshift(pmr);
+    await persistPmrToSupabase(pmr);
     return send(res, 201, { pmr, activity });
   }
   if (req.method === "POST" && url.pathname === "/api/ai/actions") {

@@ -603,6 +603,7 @@ function bindCommon() {
   document.querySelector("#pmrForm")?.addEventListener("submit", savePmr);
   document.querySelector("#contactForm")?.addEventListener("submit", saveContactPerson);
   document.querySelector("#salesmanForm")?.addEventListener("submit", saveSalesmanForm);
+  document.querySelector("#weeklyReportForm")?.addEventListener("submit", submitWeeklyReport);
   document.querySelectorAll("[data-lead-filter]").forEach(select => select.addEventListener("change", event => {
     state.leadFilters[event.currentTarget.dataset.leadFilter] = event.currentTarget.value;
     render();
@@ -751,6 +752,49 @@ function weeklySalesReportPanel() {
   </article>`;
 }
 
+function weeklySalesReportPanelV2() {
+  const report = state.data.weeklyReport;
+  if (!report) return "";
+  const blockerList = report.blockers?.length ? report.blockers.map(item => `<li>${item}</li>`).join("") : "<li>No blockers. Ready for digital sign-off.</li>";
+  const isSubmitted = Boolean(report.submittedAt);
+  const directorRows = (state.data.weeklyReports || []).map(item => `<tr>
+    <td><b>${item.rep}</b></td>
+    <td>${displayDate(item.weekEnding)}</td>
+    <td>${item.state}</td>
+    <td>${displayDate(item.submittedAt)}</td>
+    <td><button data-review-report="${item.id}" data-decision="accepted">Accept</button><button data-review-report="${item.id}" data-decision="revision">Revision</button></td>
+  </tr>`);
+  return `<article class="panel full weekly-report">
+    <div class="panel-head">
+      <div><h2>Weekly Sales Report Gate</h2><p>Live-data weekly reporting discipline from ARG-IT-SPEC-WSR-001.</p></div>
+      <span class="report-state">${report.state}</span>
+    </div>
+    <div class="report-meter"><strong>${report.completion}% complete</strong><i style="--w:${report.completion}%"></i><span>${report.blockers.length} blockers</span></div>
+    <section class="report-block-grid">
+      <div><b>A - Rep & Week</b><p>${report.rep} - Week ending ${report.weekEnding} - ${report.branch}</p><small>Auto-filled from login. No manual entry.</small></div>
+      <div><b>B - Secured Orders</b><p>${report.securedOrders.length ? report.securedOrders.map(order => `${order.account} ${money(order.value)}`).join(", ") : "No secured orders this week."}</p><small>ERP-owned facts shown as read-only context.</small></div>
+      <div><b>C - Pipeline Confirmation</b><p>${report.pipelineConfirmations.map(item => `${item.account}: ${item.likelihood}`).join(", ") || "No opportunities to confirm."}</p><small>Likelihood, timing, and risk notes confirmed in place.</small></div>
+      <div><b>D - Problematic Accounts</b><p>${report.flaggedAccounts.map(item => item.companyName).join(", ") || "No system flags."}</p><small>Every flagged account needs report-or-dismiss disposition.</small></div>
+      <div><b>E - Market Intelligence Overlay</b><p>Demand: ${report.marketOverlay.demand}; Pricing: ${report.marketOverlay.pricing}; Credit: ${report.marketOverlay.creditClimate}</p><small>Forced-choice scales feed aggregate indices.</small></div>
+      <div><b>F - Completeness & Sign-Off</b><ul>${blockerList}</ul><small>${report.attestation ? `Signed by ${report.attestation.signedByName} on ${displayDate(report.attestation.signedAt)}` : "Digital sign-off not yet captured."}</small></div>
+    </section>
+    ${state.user.role !== "admin" ? `<form id="weeklyReportForm" class="weekly-report-form">
+      <label>Brief summary of week<textarea name="summary" minlength="20" ${isSubmitted ? "disabled" : ""} required>${report.marketOverlay.summary || ""}</textarea></label>
+      <div class="weekly-select-grid">
+        <label>Demand<select name="demand" ${isSubmitted ? "disabled" : ""}>${["No selection", "Much slower", "Slightly slower", "Same", "Busier", "Much busier"].map(value => `<option ${report.marketOverlay.demand === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+        <label>Pricing<select name="pricing" ${isSubmitted ? "disabled" : ""}>${["No selection", "No complaints", "Some complaints", "Frequent complaints", "Lost on price"].map(value => `<option ${report.marketOverlay.pricing === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+        <label>Credit climate<select name="creditClimate" ${isSubmitted ? "disabled" : ""}>${["No selection", "Healthy", "Some stress", "More extended terms", "Serious cash-flow stress"].map(value => `<option ${report.marketOverlay.creditClimate === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      </div>
+      <label>Project and market notes<textarea name="projects" ${isSubmitted ? "disabled" : ""}>${report.marketOverlay.projects === "No note yet" ? "" : report.marketOverlay.projects}</textarea></label>
+      <label class="check-row"><input type="checkbox" name="confirmFlagDispositions" ${isSubmitted ? "disabled checked" : ""}> I have addressed or dismissed every system-flagged account for this week.</label>
+      <label class="check-row"><input type="checkbox" name="attestationConfirmed" ${isSubmitted ? "disabled checked" : ""} required> I confirm this report is complete and honest.</label>
+      <button class="primary" type="submit" ${isSubmitted ? "disabled" : ""}>${isSubmitted ? "Submitted" : "Submit Weekly Report"}</button>
+    </form>` : ""}
+    ${state.user.role === "admin" ? `<section class="director-weekly-review"><h3>Submitted Weekly Reports</h3>${table(["Rep", "Week Ending", "State", "Submitted", "Review"], directorRows, "No submitted weekly reports yet.")}</section>` : ""}
+    ${report.directorQueue ? `<section class="director-queue"><b>Director Review Queue</b><p>Missing reports: ${report.directorQueue.missingReports.join(", ") || "none"}</p><p>Contradictions: ${report.directorQueue.contradictionFlags.join("; ") || "none"}</p></section>` : ""}
+  </article>`;
+}
+
 function deletionApprovalPanel() {
   const requests = state.data.deletionRequests || [];
   if (state.user.role !== "admin" || !requests.length) return "";
@@ -872,7 +916,7 @@ const pages = {
         { label: "Due Today", value: dueToday, delta: "" },
         { label: "Completed", value: completed, delta: "" },
         { label: "Overdue", value: overdue, delta: "" }
-      ])}${weeklySalesReportPanel()}<section class="two-col strong-left"><article class="panel">${table(["Task", "Related To", "Priority", "Due", "Status"], state.data.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.relatedTo}</td><td>${task.priority}</td><td>${task.due}</td><td>${task.status}</td></tr>`))}</article><div class="stack"><article class="panel"><h2>Priority Breakdown</h2>${Object.entries(counts).map(([key, value], index) => `<div class="progress-row"><b>${key}</b><i class="tone-${index}" style="--w:${value * 2}%"></i><span>${value}</span></div>`).join("")}</article><article class="panel">${table(["Reminder", "Time"], state.data.tasks.slice(0, 4).map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`), "No reminders")}</article></div></section>`;
+      ])}${weeklySalesReportPanelV2()}<section class="two-col strong-left"><article class="panel">${table(["Task", "Related To", "Priority", "Due", "Status"], state.data.tasks.map(task => `<tr><td><b>${task.title}</b></td><td>${task.relatedTo}</td><td>${task.priority}</td><td>${task.due}</td><td>${task.status}</td></tr>`))}</article><div class="stack"><article class="panel"><h2>Priority Breakdown</h2>${Object.entries(counts).map(([key, value], index) => `<div class="progress-row"><b>${key}</b><i class="tone-${index}" style="--w:${value * 2}%"></i><span>${value}</span></div>`).join("")}</article><article class="panel">${table(["Reminder", "Time"], state.data.tasks.slice(0, 4).map(task => `<tr><td><b>${task.title}</b></td><td>${task.due}</td></tr>`), "No reminders")}</article></div></section>`;
     }
   },
   calendar: {
@@ -1300,6 +1344,30 @@ async function deleteContactPerson(index) {
   state.notice = "Contact person deleted.";
 }
 
+async function submitWeeklyReport(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const payload = Object.fromEntries(form.entries());
+  payload.confirmFlagDispositions = form.get("confirmFlagDispositions") === "on";
+  payload.attestationConfirmed = form.get("attestationConfirmed") === "on";
+  payload.userAgent = navigator.userAgent;
+  try {
+    await api("/api/weekly-reports/current/submit", { method: "POST", body: JSON.stringify(payload) });
+    state.notice = "Weekly sales report submitted with digital attestation.";
+    await bootstrap();
+  } catch (error) {
+    state.notice = error.message;
+    render();
+  }
+}
+
+async function reviewWeeklyReport(reportId, decision) {
+  const note = decision === "revision" ? prompt("Revision note for the salesman?") || "Please revise and resubmit." : "Accepted by director.";
+  await api(`/api/weekly-reports/${encodeURIComponent(reportId)}/review`, { method: "POST", body: JSON.stringify({ decision, note }) });
+  state.notice = decision === "revision" ? "Weekly report returned for revision." : "Weekly report accepted.";
+  await bootstrap();
+}
+
 async function runAiDemo() {
   const result = await api("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ text: "Client requested updated steel plate pricing and a follow-up tomorrow morning." }) });
   state.notice = `${result.disabled ? "Fallback" : "Live"} Whisper: ${result.summary}`;
@@ -1361,6 +1429,8 @@ document.addEventListener("click", async event => {
     const output = el("#integrationOutput");
     if (output) output.innerHTML = `<b>Retrospective Impact Preview</b><p>${result.preview}</p><p><strong>Confirmation required before write.</strong></p>`;
   }
+  const reviewButton = event.target.closest("[data-review-report]");
+  if (reviewButton) await reviewWeeklyReport(reviewButton.dataset.reviewReport, reviewButton.dataset.decision);
 });
 
 Object.defineProperty(pages.dashboard, "title", { get() { return state.user?.role === "admin" ? "CRM Admin Dashboard" : "My Sales Dashboard"; } });

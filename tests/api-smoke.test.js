@@ -174,6 +174,47 @@ function auth(token) {
     assert.ok(adminAfterSalesmanLead.body.leads.some(lead => lead.id === salesmanCreatedLead.body.lead.id));
     assert.equal(adminAfterSalesmanLead.body.dashboard.kpis.newLeads, 2);
 
+    const currentReport = await request("/api/weekly-reports/current", { headers: auth(salesmanLogin.body.token) });
+    assert.equal(currentReport.response.status, 200);
+    assert.equal(currentReport.body.report.rep, "Rep One");
+    assert.ok(Array.isArray(currentReport.body.report.blockers));
+
+    const blockedReportSubmit = await request("/api/weekly-reports/current/submit", {
+      method: "POST",
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({ summary: "Short", attestationConfirmed: false })
+    });
+    assert.equal(blockedReportSubmit.response.status, 409);
+
+    const reportSubmit = await request("/api/weekly-reports/current/submit", {
+      method: "POST",
+      headers: auth(salesmanLogin.body.token),
+      body: JSON.stringify({
+        summary: "This week I confirmed active follow-up requirements and updated the steel opportunity pipeline.",
+        demand: "Busier",
+        pricing: "Some complaints",
+        creditClimate: "Some stress",
+        projects: "Contractors are asking for faster plate and beam availability.",
+        confirmFlagDispositions: true,
+        attestationConfirmed: true
+      })
+    });
+    assert.equal(reportSubmit.response.status, 201);
+    assert.equal(reportSubmit.body.report.state, "Submitted");
+    assert.ok(reportSubmit.body.report.attestation.confirmed);
+
+    const adminReports = await request("/api/weekly-reports/current", { headers: auth(adminLogin.body.token) });
+    assert.equal(adminReports.response.status, 200);
+    assert.ok(adminReports.body.submittedReports.some(report => report.id === reportSubmit.body.report.id));
+
+    const reviewReport = await request(`/api/weekly-reports/${encodeURIComponent(reportSubmit.body.report.id)}/review`, {
+      method: "POST",
+      headers: auth(adminLogin.body.token),
+      body: JSON.stringify({ decision: "accepted", note: "Accepted after review." })
+    });
+    assert.equal(reviewReport.response.status, 200);
+    assert.equal(reviewReport.body.report.state, "Accepted");
+
     const contactUpdate = await request(`/api/leads/${salesmanCreatedLead.body.lead.id}`, {
       method: "PATCH",
       headers: auth(salesmanLogin.body.token),

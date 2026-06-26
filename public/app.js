@@ -408,7 +408,7 @@ async function api(path, options = {}) {
 }
 
 async function downloadExport(type) {
-  const path = type === "pdf" ? "/api/export/leads.pdf" : "/api/export/leads.csv";
+  const path = type === "pdf" ? "/api/export/leads.pdf" : "/api/export/leads.xls";
   const response = await fetch(path, { headers: state.token ? { Authorization: `Bearer ${state.token}` } : {} });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -417,7 +417,7 @@ async function downloadExport(type) {
   const blob = await response.blob();
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = type === "pdf" ? "al-ras-steel-leads.pdf" : "al-ras-steel-leads.csv";
+  link.download = type === "pdf" ? "al-ras-steel-leads.pdf" : "al-ras-steel-leads.xls";
   document.body.appendChild(link);
   link.click();
   URL.revokeObjectURL(link.href);

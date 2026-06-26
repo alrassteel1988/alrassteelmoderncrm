@@ -194,23 +194,54 @@ function exportableLeads() {
   return leads.map(decorateLead);
 }
 
+const EXPORT_LEAD_FIELDS = [
+  ["Company ID", lead => lead.companyId],
+  ["Date Created", lead => lead.created],
+  ["Company name", lead => lead.companyName],
+  ["Legal name", lead => lead.legalName],
+  ["Year established", lead => lead.yearEstablished],
+  ["Country / Emirate", lead => lead.countryEmirate],
+  ["Sector", lead => lead.sector],
+  ["Tier", lead => lead.tier],
+  ["Industry", lead => lead.industry],
+  ["Location", lead => lead.location || lead.region],
+  ["Address", lead => lead.address],
+  ["Contact person", lead => lead.contactPerson],
+  ["Primary title", lead => lead.primaryTitle],
+  ["Phone", lead => lead.phone],
+  ["Email", lead => lead.email],
+  ["Secondary contact", lead => lead.secondaryContact],
+  ["Secondary title", lead => lead.secondaryTitle],
+  ["Secondary mobile", lead => lead.secondaryMobile],
+  ["Secondary email", lead => lead.secondaryEmail],
+  ["Website", lead => lead.website],
+  ["Google Maps URL", lead => lead.googleMapsUrl],
+  ["Business category", lead => lead.businessCategory],
+  ["Territory", lead => lead.territory],
+  ["Assigned salesman", lead => ownerNameServer(lead.ownerId)],
+  ["Stage", lead => lead.stage || lead.status],
+  ["Priority", lead => lead.priority],
+  ["Estimated value", lead => lead.estimatedValue || lead.value],
+  ["Next action date", lead => lead.nextActionDate || lead.nextFollowUp?.slice(0, 10)],
+  ["Next Action", lead => lead.nextActionType],
+  ["Scope of Action", lead => lead.scopeOfAction],
+  ["First order date", lead => lead.firstOrderDate],
+  ["Est. monthly volume", lead => lead.estimatedMonthlyVolume],
+  ["Product interest", lead => lead.productInterest],
+  ["Tags", lead => lead.tags],
+  ["Quotation ref", lead => lead.quotationRef],
+  ["Products/services remarks", lead => lead.productRemarks],
+  ["Next action", lead => lead.nextAction],
+  ["Notes", lead => Array.isArray(lead.notes) ? lead.notes.join(" | ") : lead.notes]
+];
+
+function exportLeadRows() {
+  return exportableLeads().map(lead => EXPORT_LEAD_FIELDS.map(([, getter]) => getter(lead) ?? ""));
+}
+
 function leadsCsv() {
-  const headers = ["Company ID", "Company Name", "Contact", "Email", "Phone", "Status", "Sector", "Territory", "Owner", "Estimated Value (AED)", "Created", "Next Action", "Notes"];
-  const rows = exportableLeads().map(lead => [
-    lead.companyId,
-    lead.companyName,
-    lead.contactPerson,
-    lead.email,
-    lead.phone,
-    lead.status,
-    lead.sector,
-    lead.territory,
-    users.find(user => user.id === lead.ownerId)?.name || "",
-    lead.estimatedValue || lead.value,
-    lead.created,
-    lead.nextAction,
-    Array.isArray(lead.notes) ? lead.notes.join(" | ") : lead.notes
-  ]);
+  const headers = EXPORT_LEAD_FIELDS.map(([label]) => label);
+  const rows = exportLeadRows();
   return [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n");
 }
 
@@ -223,15 +254,31 @@ function currencyLabel(value) {
 }
 
 function simpleLeadsPdf() {
-  const lines = ["Al Ras Steel Leads Export", `Generated ${new Date().toISOString()}`, "", ...exportableLeads().slice(0, 60).map(lead => `${lead.companyId}  ${lead.companyName}  ${lead.status}  ${currencyLabel(lead.estimatedValue || lead.value)}  ${ownerNameServer(lead.ownerId)}`)];
-  const content = ["BT", "/F1 12 Tf", "50 790 Td", "14 TL", ...lines.map((line, index) => `${index ? "T*" : ""} (${pdfEscape(line).slice(0, 95)}) Tj`), "ET"].join("\n");
+  const lines = ["Al Ras Steel Leads Export", `Generated ${new Date().toISOString()}`, "Includes all fillable Add Lead form fields.", ""];
+  for (const lead of exportableLeads()) {
+    lines.push(`${lead.companyId || ""} - ${lead.companyName || ""}`);
+    for (const [label, getter] of EXPORT_LEAD_FIELDS) {
+      if (label === "Company ID") continue;
+      lines.push(`${label}: ${getter(lead) ?? ""}`);
+    }
+    lines.push("");
+  }
+  const pages = [];
+  const pageSize = 46;
+  for (let i = 0; i < lines.length; i += pageSize) pages.push(lines.slice(i, i + pageSize));
+  if (!pages.length) pages.push(lines);
   const objects = [
     "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
-    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-    `5 0 obj << /Length ${Buffer.byteLength(content)} >> stream\n${content}\nendstream endobj`
+    `2 0 obj << /Type /Pages /Kids [${pages.map((_, index) => `${3 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >> endobj`
   ];
+  pages.forEach((pageLines, index) => {
+    const pageObjectId = 3 + index * 2;
+    const contentObjectId = pageObjectId + 1;
+    const content = ["BT", "/F1 9 Tf", "36 806 Td", "12 TL", ...pageLines.map((line, lineIndex) => `${lineIndex ? "T*" : ""} (${pdfEscape(line).slice(0, 132)}) Tj`), "ET"].join("\n");
+    objects.push(`${pageObjectId} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R >> >> /Contents ${contentObjectId} 0 R >> endobj`);
+    objects.push(`${contentObjectId} 0 obj << /Length ${Buffer.byteLength(content)} >> stream\n${content}\nendstream endobj`);
+  });
+  objects.push(`${3 + pages.length * 2} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj`);
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
   for (const obj of objects) {
@@ -973,11 +1020,11 @@ async function handleApi(req, res) {
       meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, users: supabaseUsers, leads: supabaseSync } }
     });
   }
-  if (req.method === "GET" && url.pathname === "/api/export/leads.csv") {
+  if (req.method === "GET" && (url.pathname === "/api/export/leads.xls" || url.pathname === "/api/export/leads.csv")) {
     if (user.role !== "admin") return send(res, 403, { error: "Admin access required for lead export." });
     return sendText(res, 200, leadsCsv(), {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="al-ras-steel-leads.csv"'
+      "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="al-ras-steel-leads.xls"'
     });
   }
   if (req.method === "GET" && url.pathname === "/api/export/leads.pdf") {

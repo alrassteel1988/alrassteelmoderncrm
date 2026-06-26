@@ -114,8 +114,10 @@ function auth(token) {
     });
     assert.equal(forbiddenUserCreate.response.status, 403);
 
-    const forbiddenExport = await request("/api/export/leads.csv", { headers: auth(salesmanLogin.body.token) });
+    const forbiddenExport = await request("/api/export/leads.xls", { headers: auth(salesmanLogin.body.token) });
     assert.equal(forbiddenExport.response.status, 403);
+    const forbiddenPdfExport = await request("/api/export/leads.pdf", { headers: auth(salesmanLogin.body.token) });
+    assert.equal(forbiddenPdfExport.response.status, 403);
 
     const created = await request("/api/leads", {
       method: "POST",
@@ -156,7 +158,8 @@ function auth(token) {
         estimatedValue: 8500,
         nextActionDate: "2026-06-30",
         nextActionType: "Online Meeting",
-        scopeOfAction: "Meeting for New Requirements"
+        scopeOfAction: "Meeting for New Requirements",
+        productInterest: "GI Coils, Steel Bars"
       })
     });
     assert.equal(salesmanCreatedLead.response.status, 201);
@@ -221,9 +224,17 @@ function auth(token) {
     assert.equal(correctApproval.response.status, 200);
     assert.equal(correctApproval.body.deleted, true);
 
-    const adminExport = await request("/api/export/leads.csv", { headers: auth(adminLogin.body.token) });
+    const adminExport = await request("/api/export/leads.xls", { headers: auth(adminLogin.body.token) });
     assert.equal(adminExport.response.status, 200);
-    assert.ok(String(adminExport.body).includes("Company ID"));
+    const exportText = String(adminExport.body);
+    ["Company ID", "Company name", "Legal name", "Google Maps URL", "Scope of Action", "Product interest", "Products/services remarks", "Notes"].forEach(header => {
+      assert.ok(exportText.includes(header), `Missing export field: ${header}`);
+    });
+    assert.ok(exportText.includes("GI Coils, Steel Bars"));
+
+    const adminPdfExport = await request("/api/export/leads.pdf", { headers: auth(adminLogin.body.token) });
+    assert.equal(adminPdfExport.response.status, 200);
+    assert.ok(String(adminPdfExport.body).includes("Al Ras Steel Leads Export"));
 
     console.log("api-adversarial ok");
   } finally {

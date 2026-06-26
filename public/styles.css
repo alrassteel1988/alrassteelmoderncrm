@@ -27,11 +27,7 @@ body {
   margin: 0;
   font-family: var(--font-main);
   color: var(--ink);
-  background:
-    linear-gradient(90deg, rgba(7, 19, 38, 0.045) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(7, 19, 38, 0.035) 1px, transparent 1px),
-    linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
-  background-size: 28px 28px, 28px 28px, auto;
+  background: #fff;
   letter-spacing: 0;
 }
 button, input, select, textarea, table, th, td, label, span, p, h1, h2, h3, h4, h5, h6, small, strong, b, a {
@@ -1904,12 +1900,7 @@ td b,
   box-shadow: 12px 12px 0 rgba(7, 19, 38, .09);
 }
 .login-body {
-  background:
-    linear-gradient(90deg, rgba(7, 19, 38, 0.045) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(7, 19, 38, 0.035) 1px, transparent 1px),
-    linear-gradient(135deg, rgba(245, 179, 0, .24), transparent 32%),
-    #f8fafc;
-  background-size: 28px 28px, 28px 28px, auto, auto;
+  background: #fff;
 }
 
 .login-body {

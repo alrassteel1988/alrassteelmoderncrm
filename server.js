@@ -331,7 +331,7 @@ function readBody(req) {
 }
 
 function supabaseConfig() {
-  const url = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
   const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
   const key = /^your_/i.test(rawKey) ? "" : rawKey;
   const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";

@@ -47,7 +47,7 @@ function loadLocalEnv() {
 }
 
 const users = [
-  { id: "u-admin", name: "Glory", email: "glory@alrassteel.com", username: "glory", password: "glory12345", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" }
+  { id: "u-admin", name: "Glory", email: "glory@alrassteel.com", username: "glory", password: process.env.ADMIN_FALLBACK_PASSWORD || "", role: "admin", title: "Director", access: "Full CRM", status: "Active", territory: "Mixed" }
 ];
 
 const deletionRequests = [];
@@ -55,6 +55,7 @@ const deletionRequests = [];
 const now = new Date("2026-06-23T09:00:00+04:00");
 
 const leads = [];
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "glory@alrassteel.com").trim().toLowerCase();
 
 function cleanContact(contact = {}, index = 0) {
   return {
@@ -267,7 +268,11 @@ function supabaseConfig() {
   const url = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
   const key = /^your_/i.test(rawKey) ? "" : rawKey;
-  return { url, key, enabled: Boolean(url && key) };
+  const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const serviceKey = /^your_/i.test(rawServiceKey) ? "" : rawServiceKey;
+  const rawPublicKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
+  const publicKey = /^your_/i.test(rawPublicKey) ? "" : rawPublicKey;
+  return { url, key, serviceKey, publicKey, enabled: Boolean(url && key), adminEnabled: Boolean(url && serviceKey) };
 }
 
 async function supabaseRest(table, { method = "GET", query = "", body, prefer } = {}) {
@@ -292,6 +297,116 @@ async function supabaseRest(table, { method = "GET", query = "", body, prefer } 
     throw error;
   }
   return { disabled: false, data };
+}
+
+async function supabaseAuthRequest(pathname, { method = "GET", body, service = false, token } = {}) {
+  const config = supabaseConfig();
+  const key = service ? config.serviceKey : config.publicKey || config.key;
+  if (!config.url || !key) return { disabled: true, data: null };
+  const response = await fetch(`${config.url}/auth/v1/${pathname.replace(/^\//, "")}`, {
+    method,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${token || key}`,
+      "Content-Type": "application/json"
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const error = new Error(data?.msg || data?.message || data?.error_description || data?.error || `Supabase Auth ${response.status}`);
+    error.status = response.status;
+    error.supabase = data;
+    throw error;
+  }
+  return { disabled: false, data };
+}
+
+async function signInWithSupabase(loginId, password) {
+  const email = await emailForLoginId(loginId);
+  return supabaseAuthRequest("token?grant_type=password", {
+    method: "POST",
+    body: { email, password }
+  });
+}
+
+async function createSupabaseAuthUser({ email, password, name, username, territory }) {
+  const config = supabaseConfig();
+  if (!config.adminEnabled) return { disabled: true };
+  try {
+    return await supabaseAuthRequest("admin/users", {
+      method: "POST",
+      service: true,
+      body: {
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, username, territory, role: "salesman" },
+        app_metadata: { role: "salesman" }
+      }
+    });
+  } catch (error) {
+    if (error.status !== 422 && error.status !== 400) throw error;
+    const found = await findSupabaseAuthUserByEmail(email);
+    if (found) return { disabled: false, data: { user: found, alreadyExists: true } };
+    throw error;
+  }
+}
+
+async function findSupabaseAuthUserByEmail(email) {
+  const config = supabaseConfig();
+  if (!config.adminEnabled) return null;
+  const wanted = String(email || "").trim().toLowerCase();
+  const { data } = await supabaseAuthRequest(`admin/users?page=1&per_page=1000`, { service: true });
+  const list = Array.isArray(data?.users) ? data.users : Array.isArray(data) ? data : [];
+  return list.find(user => String(user.email || "").toLowerCase() === wanted) || null;
+}
+
+async function emailForLoginId(loginId) {
+  const id = String(loginId || "").trim().toLowerCase();
+  if (id.includes("@")) return id;
+  await syncSupabaseUsersOnce();
+  const local = users.find(user => String(user.username || "").toLowerCase() === id);
+  if (local?.email) return String(local.email).toLowerCase();
+  if (supabaseConfig().enabled) {
+    const query = `?select=email,payload&username=eq.${encodeURIComponent(id)}&limit=1`;
+    const { data } = await supabaseRest("crm_users", { query });
+    const row = data?.[0];
+    const email = row?.email || row?.payload?.email;
+    if (email) return String(email).trim().toLowerCase();
+  }
+  return id;
+}
+
+function userFromSupabaseSession(session) {
+  const authUser = session?.user || {};
+  const email = String(authUser.email || "").trim().toLowerCase();
+  const metadata = authUser.user_metadata || {};
+  const appMetadata = authUser.app_metadata || {};
+  const local = users.find(user => String(user.email || "").toLowerCase() === email || user.id === authUser.id);
+  const role = appMetadata.role || local?.role || (email === ADMIN_EMAIL ? "admin" : "salesman");
+  const profile = {
+    id: authUser.id || local?.id || (role === "admin" ? "u-admin" : `u-sales-${users.filter(person => person.role !== "admin").length + 1}`),
+    name: metadata.name || metadata.full_name || local?.name || (email === ADMIN_EMAIL ? "Glory" : email.split("@")[0]),
+    email,
+    username: metadata.username || local?.username || email.split("@")[0],
+    role,
+    title: local?.title || (role === "admin" ? "Director" : "Salesman"),
+    access: role === "admin" ? "Full CRM" : "Assigned Territory",
+    status: local?.status || "Active",
+    territory: TERRITORIES.includes(metadata.territory) ? metadata.territory : local?.territory || (role === "admin" ? "Mixed" : "Mixed")
+  };
+  upsertLocalUser(profile);
+  return profile;
+}
+
+function upsertLocalUser(profile) {
+  const index = users.findIndex(user => user.id === profile.id || String(user.email || "").toLowerCase() === String(profile.email || "").toLowerCase());
+  const next = { ...(index >= 0 ? users[index] : {}), ...profile };
+  if (index >= 0) users[index] = next;
+  else users.push(next);
+  return next;
 }
 
 async function syncSupabaseLeadsOnce() {
@@ -320,12 +435,12 @@ async function syncSupabaseUsersOnce() {
     for (const row of data || []) {
       const person = row.payload;
       if (!person?.id || !person.email || users.some(item => item.id === person.id || item.email.toLowerCase() === String(person.email).toLowerCase())) continue;
-      users.push({
+      upsertLocalUser({
         ...person,
         username: person.username || String(person.email).split("@")[0],
-        role: person.role === "admin" ? "salesman" : "salesman",
-        title: person.title || "Salesman",
-        access: "Assigned Territory",
+        role: person.role || "salesman",
+        title: person.title || (person.role === "admin" ? "Director" : "Salesman"),
+        access: person.role === "admin" ? "Full CRM" : "Assigned Territory",
         status: person.status || "Active",
         territory: TERRITORIES.includes(person.territory) ? person.territory : "Mixed"
       });
@@ -338,7 +453,6 @@ async function syncSupabaseUsersOnce() {
 }
 
 async function persistUserToSupabase(user) {
-  if (user.role === "admin") return { skipped: true };
   try {
     await supabaseRest("crm_users", {
       method: "POST",
@@ -798,6 +912,17 @@ async function handleApi(req, res) {
     await syncSupabaseUsersOnce();
     const body = await readBody(req);
     const loginId = String(body.email || body.username || "").trim().toLowerCase();
+    if (supabaseConfig().enabled) {
+      try {
+        const { data: session } = await signInWithSupabase(loginId, String(body.password || ""));
+        const profile = userFromSupabaseSession(session);
+        await persistUserToSupabase(profile);
+        sessions.set(session.access_token, safeUser(profile));
+        return send(res, 200, { token: session.access_token, refresh_token: session.refresh_token, user: safeUser(profile), auth: "supabase" });
+      } catch (error) {
+        return send(res, error.status === 400 ? 401 : error.status || 401, { error: "Invalid email or password." });
+      }
+    }
     const found = users.find(user => (user.email.toLowerCase() === loginId || String(user.username || "").toLowerCase() === loginId) && user.password === body.password);
     if (!found) return send(res, 401, { error: "Invalid email or password." });
     const token = crypto.randomBytes(24).toString("hex");
@@ -872,21 +997,24 @@ async function handleApi(req, res) {
     if (!name || !email || !username || !password) return send(res, 400, { error: "Name, username, email, and password are required." });
     if (password.length < 8) return send(res, 400, { error: "Password must be at least 8 characters." });
     if (users.some(person => person.email.toLowerCase() === email || String(person.username || "").toLowerCase() === username)) return send(res, 409, { error: "A user with this email or username already exists." });
+    const authResult = await createSupabaseAuthUser({ email, password, name, username, territory: body.territory });
+    if (supabaseConfig().enabled && authResult.disabled) return send(res, 503, { error: "Supabase service role key is required to create salesman Auth accounts." });
+    const authUser = authResult?.data?.user || authResult?.data || {};
     const salesman = {
-      id: `u-sales-${users.filter(person => person.role !== "admin").length + 1}`,
+      id: authUser.id || `u-sales-${users.filter(person => person.role !== "admin").length + 1}`,
       name,
       email,
       username,
-      password,
+      ...(authResult?.disabled ? { password } : {}),
       role: "salesman",
       title: body.title || "Salesman",
       access: "Assigned Territory",
       status: body.status || "Active",
       territory: TERRITORIES.includes(body.territory) ? body.territory : "Mixed"
     };
-    users.push(salesman);
+    upsertLocalUser(salesman);
     const supabase = await persistUserToSupabase(salesman);
-    return send(res, 201, { user: safeUser(salesman), supabase });
+    return send(res, 201, { user: safeUser(salesman), supabase, auth: authResult?.disabled ? "local" : "supabase" });
   }
   if (req.method === "POST" && url.pathname === "/api/leads/check-duplicate") {
     const body = await readBody(req);

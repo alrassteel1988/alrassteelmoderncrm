@@ -12,7 +12,8 @@ const child = spawn(process.execPath, ["server.js"], {
     SUPABASE_SERVICE_ROLE_KEY: "",
     SUPABASE_ANON_KEY: "",
     SUPABASE_PUBLISHABLE_KEY: "",
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ""
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
+    ADMIN_FALLBACK_PASSWORD: "glory12345"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });

@@ -387,7 +387,7 @@ function userFromSupabaseSession(session) {
   const local = users.find(user => String(user.email || "").toLowerCase() === email || user.id === authUser.id);
   const role = appMetadata.role || local?.role || (email === ADMIN_EMAIL ? "admin" : "salesman");
   const profile = {
-    id: authUser.id || local?.id || (role === "admin" ? "u-admin" : `u-sales-${users.filter(person => person.role !== "admin").length + 1}`),
+    id: local?.id || appMetadata.crm_user_id || metadata.crm_user_id || authUser.id || (role === "admin" ? "u-admin" : `u-sales-${users.filter(person => person.role !== "admin").length + 1}`),
     name: metadata.name || metadata.full_name || local?.name || (email === ADMIN_EMAIL ? "Glory" : email.split("@")[0]),
     email,
     username: metadata.username || local?.username || email.split("@")[0],

@@ -870,14 +870,21 @@ mark { background: #e1f5ee; color: #0f6e56; padding: 7px 14px; border-radius: 14
 .stack { display: grid; gap: 30px; }
 
 .kanban { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 16px; overflow-x: auto; padding-bottom: 4px; }
-.kanban section { background: #f3f4f6; border-radius: 12px; padding: 16px; min-width: 220px; }
-.kanban header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: .5px solid var(--line); }
-.kanban h3 { color: var(--ink); margin: 0; font-size: 13px; font-weight: 500; }
-.kanban header span { font-size: 12px; background: #fff; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
-.deal-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; background: #fff; border: .5px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 8px; transition: box-shadow .2s ease, transform .2s ease; }
+.kanban section {
+  background: var(--kanban-bg, #f3f4f6);
+  border: 1px solid color-mix(in srgb, var(--kanban-accent, var(--green)) 34%, #ffffff);
+  border-top: 5px solid var(--kanban-accent, var(--green));
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 220px;
+}
+.kanban header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: .5px solid color-mix(in srgb, var(--kanban-accent, var(--line)) 28%, #ffffff); }
+.kanban h3 { color: #071A33; margin: 0; font-size: 13px; font-weight: 700; }
+.kanban header span { font-size: 12px; background: rgba(255, 255, 255, .8); color: #607089; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--kanban-accent, var(--line)) 22%, #ffffff); border-radius: 4px; }
+.deal-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; background: rgba(255, 255, 255, .88); border: .5px solid rgba(96, 112, 137, .24); border-radius: 6px; padding: 12px; margin-bottom: 8px; transition: box-shadow .2s ease, transform .2s ease; }
 .deal-card:hover { box-shadow: 0 10px 25px rgba(0,0,0,.12); transform: translateY(-1px); }
 .deal-card b { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.deal-card span { color: var(--green); font-size: 11px; font-weight: 500; flex-shrink: 0; }
+.deal-card span { color: #008C72; font-size: 11px; font-weight: 700; flex-shrink: 0; }
 .progress-row { display: grid; grid-template-columns: 90px 1fr 32px; gap: 12px; align-items: center; margin: 26px 0; }
 .progress-row i { height: 15px; border-radius: 10px; background: linear-gradient(90deg, #eb4265, var(--violet)) left / var(--w) 100% no-repeat, #dfe6f4; }
 .progress-row i.tone-1 { background-image: linear-gradient(90deg, #ff7a1a, var(--violet)); }
@@ -1874,7 +1881,6 @@ td b,
 .product-interest-field {
   border-radius: var(--bauhaus-radius);
 }
-.kanban section,
 .follow-card,
 .report-block-grid > div,
 .director-queue,
@@ -1883,6 +1889,11 @@ td b,
 .integration-output {
   background: #f8fafc;
   border: 1px solid #d7e0ec;
+}
+.kanban .kanban-column {
+  background: var(--kanban-bg, #f8fafc);
+  border: 1px solid color-mix(in srgb, var(--kanban-accent, var(--green)) 34%, #ffffff);
+  border-top: 5px solid var(--kanban-accent, var(--green));
 }
 .progress-row i,
 .report-meter i,

@@ -88,6 +88,30 @@ const AI_ACTIONS = [
   ["coaching", "Who Needs Coaching?"]
 ];
 
+const kanbanStageStyles = {
+  Prospect: {
+    background: "#EAF4FF",
+    border: "#2F80ED"
+  },
+  Negotiation: {
+    background: "#FFF3D6",
+    border: "#F4AC45"
+  },
+  "Under Review": {
+    background: "#F1EDFF",
+    border: "#7C5CFF"
+  },
+  "Closed Won": {
+    background: "#EAF8F0",
+    border: "#109648"
+  }
+};
+
+function kanbanStyleVars(stageTitle) {
+  const style = kanbanStageStyles[stageTitle] || {};
+  return `--kanban-bg: ${style.background || "#f8fafc"}; --kanban-accent: ${style.border || "var(--green)"}`;
+}
+
 const bootParams = new URLSearchParams(location.search);
 if (bootParams.get("view")) {
   state.route = bootParams.get("view");
@@ -828,7 +852,7 @@ const pages = {
       ])}
       <article class="panel full"><h2>Kanban Deal Board</h2><div class="kanban">${stageGroups.map(group => {
         const items = state.data.deals.filter(deal => group.statuses.includes(deal.stage)).concat(state.data.leads.filter(lead => group.statuses.includes(lead.status) || group.statuses.includes(lead.stage)).slice(0, 3));
-        return `<section><header><h3>${group.title}</h3><span>${items.length}</span></header>${items.map(item => `<div class="deal-card"><b>${item.title || item.companyName || item.company}</b><span>${money(item.value || item.estimatedValue)}</span></div>`).join("")}</section>`;
+        return `<section class="kanban-column" style="${kanbanStyleVars(group.title)}"><header><h3>${group.title}</h3><span>${items.length}</span></header>${items.map(item => `<div class="deal-card"><b>${item.title || item.companyName || item.company}</b><span>${money(item.value || item.estimatedValue)}</span></div>`).join("")}</section>`;
       }).join("")}</div></article>
       <section class="two-col"><article class="panel">${table(["Deal", "Company", "Stage", "Close", "Value"], state.data.deals.map(deal => `<tr><td><b>${deal.title}</b></td><td>${deal.company}</td><td>${deal.stage}</td><td>${deal.close}</td><td>${money(deal.value)}</td></tr>`))}</article><article class="panel"><h2>Deal Value Trend</h2><strong class="large">${money(482000)}</strong>${lineChart([20, 36, 30, 62, 48, 78, 55])}</article></section>`;
     }

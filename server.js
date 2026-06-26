@@ -475,21 +475,85 @@ function upsertLocalUser(profile) {
   return next;
 }
 
+function upsertLocalLead(lead) {
+  const normalized = normalizeCompanyRecord(lead, leads.length);
+  const index = leads.findIndex(item => item.id === normalized.id || item.companyId === normalized.companyId);
+  if (index >= 0) leads[index] = normalizeCompanyRecord({ ...leads[index], ...normalized }, index);
+  else leads.unshift(normalized);
+  return normalized;
+}
+
+function leadFromCompanyRow(row, contactRows = []) {
+  const payload = row.payload || {};
+  const contactsForCompany = contactRows
+    .filter(contact => contact.company_id === row.id)
+    .map((contact, index) => cleanContact({
+      ...(contact.payload || {}),
+      id: contact.id || contact.payload?.id || `${row.id}-contact-${index + 1}`,
+      name: contact.name,
+      title: contact.title,
+      phone: contact.phone,
+      email: contact.email,
+      isDefault: contact.is_default
+    }, index));
+  return normalizeCompanyRecord({
+    ...payload,
+    id: payload.id || row.legacy_lead_id || row.id,
+    companyId: row.id,
+    companyName: row.company_name,
+    company: row.company_name,
+    legalName: row.legal_name || payload.legalName || row.company_name,
+    countryEmirate: row.country_emirate || payload.countryEmirate || "",
+    sector: row.sector || payload.sector || "Other",
+    tier: row.tier || payload.tier || "2",
+    status: row.status || payload.status || "PROSPECT",
+    stage: row.status || payload.stage || "PROSPECT",
+    ownerId: row.assigned_user_id || payload.ownerId,
+    territory: row.territory || payload.territory || "Mixed",
+    nextAction: row.next_action || payload.nextAction || "",
+    nextActionDate: row.next_action_date || payload.nextActionDate || "",
+    nextFollowUp: row.next_action_date || payload.nextFollowUp || "",
+    estimatedValue: Number(row.estimated_value ?? payload.estimatedValue ?? payload.value ?? 0),
+    value: Number(row.estimated_value ?? payload.value ?? payload.estimatedValue ?? 0),
+    firstOrderDate: row.first_order_date || payload.firstOrderDate || "",
+    estimatedMonthlyVolume: row.estimated_monthly_volume || payload.estimatedMonthlyVolume || "",
+    productInterest: row.product_interest || payload.productInterest || "",
+    tags: row.tags || payload.tags || "",
+    quotationRef: row.quotation_ref || payload.quotationRef || "",
+    contacts: contactsForCompany.length ? contactsForCompany : payload.contacts
+  });
+}
+
 async function syncSupabaseLeadsOnce() {
   if (!supabaseConfig().enabled) return { disabled: true };
   try {
+    const structured = await supabaseRest("companies", { query: "?select=*&order=created_at.desc" });
+    const contactResult = await supabaseRest("contacts", { query: "?select=*&order=created_at.asc" }).catch(() => ({ data: [] }));
+    let added = 0;
+    for (const row of structured.data || []) {
+      const lead = leadFromCompanyRow(row, contactResult.data || []);
+      if (isDemoLead(lead)) continue;
+      const existed = leads.some(item => item.id === lead.id || item.companyId === lead.companyId);
+      upsertLocalLead(lead);
+      if (!existed) added += 1;
+    }
+    return { disabled: false, added, source: "companies", rows: structured.data?.length || 0 };
+  } catch (structuredError) {
+    try {
     const { data } = await supabaseRest("crm_leads", { query: "?select=payload&order=created_at.desc" });
     let added = 0;
     for (const row of data || []) {
       const lead = row.payload;
       if (isDemoLead(lead)) continue;
-      if (!lead?.id || leads.some(item => item.id === lead.id || item.companyId === lead.companyId)) continue;
-      leads.unshift(normalizeCompanyRecord(lead, leads.length));
-      added += 1;
+      if (!lead?.id) continue;
+      const existed = leads.some(item => item.id === lead.id || item.companyId === lead.companyId);
+      upsertLocalLead(lead);
+      if (!existed) added += 1;
     }
-    return { disabled: false, added };
-  } catch (error) {
-    return { disabled: false, error: error.message };
+    return { disabled: false, added, source: "crm_leads", structuredError: structuredError.message };
+    } catch (error) {
+      return { disabled: false, error: error.message, structuredError: structuredError.message };
+    }
   }
 }
 
@@ -516,6 +580,88 @@ async function syncSupabaseUsersOnce() {
   } catch (error) {
     return { disabled: false, error: error.message };
   }
+}
+
+async function syncStructuredRecordsOnce() {
+  if (!supabaseConfig().enabled) return { disabled: true };
+  const result = { activities: 0, pmrs: 0, weeklyReports: 0, errors: [] };
+  try {
+    const { data } = await supabaseRest("activities", { query: "?select=*&order=created_at.desc" });
+    for (const row of data || []) {
+      const activity = {
+        ...(row.payload || {}),
+        id: row.id,
+        companyId: row.company_id,
+        leadId: row.payload?.leadId || "",
+        at: row.payload?.at || row.created_at,
+        type: row.activity_type,
+        loggedBy: row.logged_by,
+        notes: row.notes || row.payload?.notes || "",
+        quotationRef: row.quotation_ref || "",
+        pmrLinked: Boolean(row.pmr_linked)
+      };
+      if (!activities.some(item => item.id === activity.id)) {
+        activities.unshift(activity);
+        result.activities += 1;
+      }
+    }
+  } catch (error) {
+    result.errors.push(`activities: ${error.message}`);
+  }
+  try {
+    const { data } = await supabaseRest("pmrs", { query: "?select=*&order=meeting_date.desc" });
+    for (const row of data || []) {
+      const pmr = {
+        ...(row.payload || {}),
+        id: row.id,
+        companyId: row.company_id,
+        activityId: row.activity_id,
+        meetingDate: row.meeting_date,
+        filedBy: row.filed_by,
+        productsDiscussed: row.products_discussed || "",
+        competitorsMentioned: row.competitors_mentioned || "",
+        complianceRequirements: row.compliance_requirements || [],
+        relationshipHeatScore: row.relationship_heat_score,
+        firstOrderTiming: row.first_order_timing || "unknown",
+        potentialAnnualValue: row.potential_annual_value || "unknown",
+        directorActionRequired: row.director_action_required || "None",
+        accountStatus: row.account_status || "Warm",
+        rawDocumentUrl: row.raw_document_url || "",
+        notes: row.notes || ""
+      };
+      if (!pmrs.some(item => item.id === pmr.id)) {
+        pmrs.unshift(pmr);
+        result.pmrs += 1;
+      }
+    }
+  } catch (error) {
+    result.errors.push(`pmrs: ${error.message}`);
+  }
+  try {
+    const { data } = await supabaseRest("weekly_reports", { query: "?select=*&order=week_ending.desc" });
+    for (const row of data || []) {
+      const report = {
+        ...(row.payload || {}),
+        id: row.id,
+        weekEnding: row.week_ending,
+        userId: row.user_id,
+        state: row.state,
+        summary: row.summary || "",
+        marketOverlay: row.market_overlay || {},
+        blockers: row.blockers || [],
+        attestation: row.attestation || null,
+        directorReview: row.director_review || null,
+        submittedAt: row.submitted_at || null,
+        reviewedAt: row.reviewed_at || null
+      };
+      const existed = weeklyReports.some(item => item.id === report.id);
+      upsertWeeklyReport(report);
+      if (!existed) result.weeklyReports += 1;
+    }
+  } catch (error) {
+    result.errors.push(`weekly_reports: ${error.message}`);
+  }
+  return result;
 }
 
 async function migrateCurrentRecordsToStructuredSupabase() {
@@ -716,6 +862,47 @@ async function persistWeeklyReportToSupabase(report) {
   } catch (error) {
     return { persisted: false, error: error.message };
   }
+}
+
+async function persistDeletionRequestToSupabase(request) {
+  try {
+    await supabaseRest("deletion_requests", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: {
+        id: request.id,
+        company_id: request.companyId,
+        lead_id: request.leadId,
+        requested_by: request.requestedBy,
+        reason: request.reason || "",
+        status: request.status,
+        decision_by: request.approvedBy || request.rejectedBy || null,
+        decision_reason: request.rejectionReason || "",
+        requested_at: request.requestedAt,
+        decided_at: request.approvedAt || request.rejectedAt || null
+      }
+    });
+    return { persisted: true };
+  } catch (error) {
+    return { persisted: false, error: error.message };
+  }
+}
+
+async function deleteLeadFromSupabase(lead) {
+  const result = { company: null, legacy: null };
+  try {
+    await supabaseRest("companies", { method: "DELETE", query: `?id=eq.${encodeURIComponent(lead.companyId)}` });
+    result.company = { deleted: true };
+  } catch (error) {
+    result.company = { deleted: false, error: error.message };
+  }
+  try {
+    await supabaseRest("crm_leads", { method: "DELETE", query: `?id=eq.${encodeURIComponent(lead.id)}` });
+    result.legacy = { deleted: true };
+  } catch (error) {
+    result.legacy = { deleted: false, error: error.message };
+  }
+  return result;
 }
 
 async function persistStructuredActivityToSupabase(activity) {
@@ -1305,6 +1492,7 @@ async function handleApi(req, res) {
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     const supabaseUsers = await syncSupabaseUsersOnce();
     const supabaseSync = await syncSupabaseLeadsOnce();
+    const structuredRecords = await syncStructuredRecordsOnce();
     const structuredMigration = await migrateCurrentRecordsToStructuredSupabase();
     const industryNews = await industryNewsFeed();
     const scopedLeads = visibleLeads(user).map(decorateLead);
@@ -1328,18 +1516,21 @@ async function handleApi(req, res) {
       pmrs: pmrs.filter(pmr => scopedLeads.some(lead => lead.companyId === pmr.companyId || lead.id === pmr.leadId)),
       deletionRequests: user.role === "admin" ? deletionRequests.filter(request => request.status === "Pending") : deletionRequests.filter(request => request.requestedBy === user.id),
       configAudit: user.role === "admin" ? configAudit : [],
-      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, users: supabaseUsers, leads: supabaseSync, structuredMigration } }
+      meta: { statusValues: STATUS_VALUES, activityTypes: ACTIVITY_TYPES, territories: TERRITORIES, sectors: SECTORS, addLeadFields: LIVE_ARG_ADD_LEAD_FIELDS, supabase: { configured: supabaseConfig().enabled, users: supabaseUsers, leads: supabaseSync, structuredRecords, structuredMigration } }
     });
   }
   if (req.method === "GET" && url.pathname === "/api/weekly-reports/current") {
+    await syncStructuredRecordsOnce();
     return send(res, 200, { report: weeklyReportFor(user), submittedReports: user.role === "admin" ? submittedWeeklyReportsForDirector() : [] });
   }
   if (req.method === "POST" && url.pathname === "/api/weekly-reports/current/submit") {
+    await syncStructuredRecordsOnce();
     const result = await submitWeeklyReport(user, await readBody(req));
     if (result.error) return send(res, result.status || 400, result);
     return send(res, 201, result);
   }
   if (req.method === "POST" && url.pathname.match(/^\/api\/weekly-reports\/[^/]+\/review$/)) {
+    await syncStructuredRecordsOnce();
     const reportId = decodeURIComponent(url.pathname.split("/")[3]);
     const result = await reviewWeeklyReport(user, reportId, await readBody(req));
     if (result.error) return send(res, result.status || 400, result);
@@ -1497,6 +1688,7 @@ async function handleApi(req, res) {
       requestedAt: new Date().toISOString()
     };
     deletionRequests.unshift(request);
+    await persistDeletionRequestToSupabase(request);
     return send(res, 201, { request });
   }
   if (req.method === "POST" && url.pathname.match(/^\/api\/deletion-requests\/[^/]+\/approve$/)) {
@@ -1507,12 +1699,15 @@ async function handleApi(req, res) {
     if (!admin || body.password !== admin.password) return send(res, 403, { error: "Admin password is required to approve deletion." });
     const request = deletionRequests.find(item => item.id === id);
     if (!request || request.status !== "Pending") return send(res, 404, { error: "Pending deletion request not found." });
+    const lead = leads.find(item => item.id === request.leadId);
     const index = leads.findIndex(lead => lead.id === request.leadId);
     if (index >= 0) leads.splice(index, 1);
     request.status = "Approved";
     request.approvedBy = user.id;
     request.approvedAt = new Date().toISOString();
-    return send(res, 200, { request, deleted: index >= 0 });
+    const supabase = lead ? await deleteLeadFromSupabase(lead) : null;
+    await persistDeletionRequestToSupabase(request);
+    return send(res, 200, { request, deleted: index >= 0, supabase });
   }
   if (req.method === "POST" && url.pathname.match(/^\/api\/deletion-requests\/[^/]+\/reject$/)) {
     if (user.role !== "admin") return send(res, 403, { error: "Admin access required." });
@@ -1524,6 +1719,7 @@ async function handleApi(req, res) {
     request.rejectedBy = user.id;
     request.rejectedAt = new Date().toISOString();
     request.rejectionReason = String(body.reason || "Rejected by admin.").trim();
+    await persistDeletionRequestToSupabase(request);
     return send(res, 200, { request });
   }
   if (req.method === "PATCH" && url.pathname.startsWith("/api/leads/")) {
